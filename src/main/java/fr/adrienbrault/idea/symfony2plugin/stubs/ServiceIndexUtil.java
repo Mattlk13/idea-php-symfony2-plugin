@@ -5,6 +5,7 @@ import com.intellij.openapi.extensions.ExtensionPointName;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.Key;
 import com.intellij.openapi.util.NotNullLazyValue;
+import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
@@ -16,20 +17,30 @@ import com.intellij.psi.util.CachedValuesManager;
 import com.intellij.psi.util.PsiModificationTracker;
 import com.intellij.psi.xml.XmlFile;
 import com.intellij.util.indexing.FileBasedIndex;
+import com.jetbrains.php.lang.PhpFileType;
+import com.jetbrains.php.lang.psi.PhpFile;
 import com.jetbrains.php.lang.psi.elements.PhpClass;
 import fr.adrienbrault.idea.symfony2plugin.config.xml.XmlHelper;
 import fr.adrienbrault.idea.symfony2plugin.dic.ClassServiceDefinitionTargetLazyValue;
 import fr.adrienbrault.idea.symfony2plugin.dic.ContainerService;
+import fr.adrienbrault.idea.symfony2plugin.dic.container.ServiceInterface;
+import fr.adrienbrault.idea.symfony2plugin.dic.container.util.ServiceContainerUtil;
 import fr.adrienbrault.idea.symfony2plugin.extension.ServiceDefinitionLocator;
 import fr.adrienbrault.idea.symfony2plugin.extension.ServiceDefinitionLocatorParameter;
 import fr.adrienbrault.idea.symfony2plugin.stubs.indexes.ServicesDefinitionStubIndex;
 import fr.adrienbrault.idea.symfony2plugin.util.yaml.YamlHelper;
+import org.apache.commons.lang.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.yaml.YAMLFileType;
 import org.jetbrains.yaml.psi.YAMLFile;
 
+import java.nio.file.FileSystems;
+import java.nio.file.Paths;
 import java.util.*;
+import java.util.regex.PatternSyntaxException;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * @author Daniel Espendiller <daniel@espendiller.net>
@@ -43,16 +54,16 @@ public class ServiceIndexUtil {
         "fr.adrienbrault.idea.symfony2plugin.extension.ServiceDefinitionLocator"
     );
 
-    private static VirtualFile[] findServiceDefinitionFiles(@NotNull Project project, @NotNull String serviceName) {
+    public static VirtualFile[] findServiceDefinitionFiles(@NotNull Project project, @NotNull String serviceName) {
 
         final List<VirtualFile> virtualFiles = new ArrayList<>();
 
         FileBasedIndex.getInstance().getFilesWithKey(ServicesDefinitionStubIndex.KEY, new HashSet<>(Collections.singletonList(serviceName.toLowerCase())), virtualFile -> {
             virtualFiles.add(virtualFile);
             return true;
-        }, GlobalSearchScope.getScopeRestrictedByFileTypes(GlobalSearchScope.allScope(project), XmlFileType.INSTANCE, YAMLFileType.YML));
+        }, getRestrictedFileTypesScope(project));
 
-        return virtualFiles.toArray(new VirtualFile[virtualFiles.size()]);
+        return virtualFiles.toArray(new VirtualFile[0]);
 
     }
 
@@ -70,15 +81,18 @@ public class ServiceIndexUtil {
                 if(servicePsiElement != null) {
                     items.add(servicePsiElement);
                 }
-            }
-
-            if(psiFile instanceof XmlFile) {
+            } else if(psiFile instanceof XmlFile) {
                 PsiElement servicePsiElement = XmlHelper.getLocalServiceName(psiFile, serviceName);
                 if(servicePsiElement != null) {
                     items.add(servicePsiElement);
                 }
+            } else if(psiFile instanceof PhpFile) {
+                ServiceContainerUtil.visitFile((PhpFile) psiFile, service -> {
+                    if (serviceName.equalsIgnoreCase(service.getServiceId())) {
+                        items.add(service.getPsiElement());
+                    }
+                });
             }
-
         }
 
         // extension points
@@ -151,6 +165,149 @@ public class ServiceIndexUtil {
     }
 
     /**
+     * "..src/Foo/{Foo,Foobar.php}"
+     *
+     */
+    public static boolean matchesResourcesGlob(@NotNull VirtualFile serviceFileAsBase, @NotNull VirtualFile phpClassFile, @NotNull Collection<String> resources, @NotNull Collection<String> excludes) {
+        for (String resource : resources) {
+            String replace = resource.replace("\\\\", "/");
+
+            VirtualFile serviceFile = serviceFileAsBase.getParent();
+            String[] split = replace.split("/");
+            String[] replacePathParts = split;
+            for (String s : split) {
+                if (s.equals("..")) {
+                    replacePathParts = Arrays.copyOfRange(replacePathParts, 1, replacePathParts.length);
+                    serviceFile = serviceFile.getParent();
+                } else {
+                    break;
+                }
+            }
+
+            if (serviceFile == null) {
+                return false;
+            }
+
+            // ending one wildcard must be *
+            // "src/*" => "src/**"
+            String path = (serviceFile.getPath() + "/" + StringUtils.join(replacePathParts, "/"))
+                .replaceAll("[^*]([*])$", "**");
+
+            // force "**" at the end
+            if (!path.endsWith("*")) {
+                path += "**";
+            }
+
+            String phpClassPath = phpClassFile.getPath();
+
+            boolean matchingGlobResource = isMatchingGlobResource(path, phpClassPath);
+            if (!matchingGlobResource) {
+                continue;
+            }
+
+            // direct match; skip it
+            if (excludes.isEmpty()) {
+                return true;
+            }
+
+            if (!matchesResourcesGlob(serviceFileAsBase, phpClassFile, excludes, Collections.emptyList())) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    @Nullable
+    public static Pair<ClassServiceDefinitionTargetLazyValue, Collection<ContainerService>> findServiceDefinitionsOfResourceLazy(@NotNull PhpClass phpClass) {
+        if (phpClass.isInterface() || phpClass.isAbstract()) {
+            return null;
+        }
+
+        String fqn = StringUtils.stripStart(phpClass.getFQN(), "\\");
+
+        String[] namespaceParts = fqn.split("\\\\");
+
+        // search for namespaces - "Foo\\FooBar\\Bar":
+        //  - Foo\\
+        //  - Foo\\FooBar\\
+        Set<String> namespaces = IntStream.range(0, namespaceParts.length - 1)
+            .mapToObj(i -> StringUtils.join(Arrays.copyOf(namespaceParts, i + 1), "\\") + "\\")
+            .collect(Collectors.toSet());
+
+        ContainerCollectionResolver.ServiceCollector serviceCollector = ContainerCollectionResolver.ServiceCollector.create(phpClass.getProject());
+
+        // "Foo\\"
+        Set<String> serviceNames = namespaces.stream()
+            .filter(namespace -> serviceCollector.convertClassNameToServices(namespace).size() > 0)
+            .collect(Collectors.toSet());
+
+        Collection<ContainerService> namespaceServices = new HashSet<>();
+        Collection<String> namespaceTargets = new HashSet<>();
+        for (String s : serviceNames) {
+            ContainerService containerService = serviceCollector.getServices().get(s);
+            if (containerService == null) {
+                continue;
+            }
+
+            ServiceInterface service = containerService.getService();
+            if (service == null) {
+                continue;
+            }
+
+            Collection<String> resources = service.getResource();
+            if (resources.isEmpty()) {
+                continue;
+            }
+
+            VirtualFile[] serviceDefinitionFiles = ServiceIndexUtil.findServiceDefinitionFiles(phpClass.getProject(), s);
+            for (VirtualFile virtualFile : serviceDefinitionFiles) {
+                PsiFile containingFile = phpClass.getContainingFile();
+                if (containingFile == null) {
+                    continue;
+                }
+
+                VirtualFile phpClassFile = containingFile.getVirtualFile();
+                if (phpClassFile == null) {
+                    continue;
+                }
+
+                if (matchesResourcesGlob(virtualFile, phpClassFile, resources, service.getExclude())) {
+                    namespaceServices.add(containerService);
+                    namespaceTargets.add(s);
+                }
+            }
+        }
+
+        if (!namespaceTargets.isEmpty()) {
+            return Pair.create(new ClassServiceDefinitionTargetLazyValue(phpClass.getProject(), namespaceTargets), namespaceServices);
+        }
+
+        return null;
+    }
+
+    /**
+     * Glob matching of resource / exclude pattern: "src/{Entity,Tests,Kernel.php}"
+     *
+     * @param glob src/{Entity,Tests,Kernel.php}
+     * @param path src/Entity/Foo.php
+     */
+    private static boolean isMatchingGlobResource(@NotNull String glob, @NotNull String path) {
+        // "src/{Entity,Tests,Kernel.php}"
+        // We must match files also: "src/Entity/Foo.php"
+        if (!glob.endsWith("**")) {
+            glob += "**";
+        }
+
+        // nested types not support by java glob implementation so just catch the exception: "../src/{DependencyInjection,Entity,Migrations,Tests,Kernel.php,Service/{IspConfiguration,DataCollection}}"
+        try {
+            return FileSystems.getDefault().getPathMatcher("glob:" + glob).matches(Paths.get(path));
+        } catch (PatternSyntaxException e) {
+            return false;
+        }
+    }
+
+    /**
      * Lazy values for linemarker
      */
     @NotNull
@@ -162,22 +319,17 @@ public class ServiceIndexUtil {
      * So support only some file types, so we can filter them and xml and yaml for now
      */
     public static GlobalSearchScope getRestrictedFileTypesScope(@NotNull Project project) {
-        return GlobalSearchScope.getScopeRestrictedByFileTypes(GlobalSearchScope.allScope(project), XmlFileType.INSTANCE, YAMLFileType.YML);
+        return GlobalSearchScope.getScopeRestrictedByFileTypes(GlobalSearchScope.allScope(project), XmlFileType.INSTANCE, YAMLFileType.YML, PhpFileType.INSTANCE);
     }
 
     @NotNull
     public static Map<String, Collection<ContainerService>> getDecoratedServices(@NotNull Project project) {
-        CachedValue<Map<String, Collection<ContainerService>>> cache = project.getUserData(SERVICE_DECORATION_CACHE);
-
-        if (cache == null) {
-            cache = CachedValuesManager.getManager(project).createCachedValue(() ->
-                CachedValueProvider.Result.create(getDecoratedServicesInner(project), PsiModificationTracker.MODIFICATION_COUNT)
-            , false);
-
-            project.putUserData(SERVICE_DECORATION_CACHE, cache);
-        }
-
-        return cache.getValue();
+        return CachedValuesManager.getManager(project).getCachedValue(
+            project,
+            SERVICE_DECORATION_CACHE,
+            () -> CachedValueProvider.Result.create(getDecoratedServicesInner(project), PsiModificationTracker.MODIFICATION_COUNT),
+            false
+        );
     }
 
     @NotNull
@@ -209,17 +361,12 @@ public class ServiceIndexUtil {
      */
     @NotNull
     public static Map<String, Collection<ContainerService>> getParentServices(@NotNull Project project) {
-        CachedValue<Map<String, Collection<ContainerService>>> cache = project.getUserData(SERVICE_PARENT);
-
-        if (cache == null) {
-            cache = CachedValuesManager.getManager(project).createCachedValue(() ->
-                    CachedValueProvider.Result.create(getParentServicesInner(project), PsiModificationTracker.MODIFICATION_COUNT)
-                , false);
-
-            project.putUserData(SERVICE_PARENT, cache);
-        }
-
-        return cache.getValue();
+        return CachedValuesManager.getManager(project).getCachedValue(
+            project,
+            SERVICE_PARENT,
+            () -> CachedValueProvider.Result.create(getParentServicesInner(project), PsiModificationTracker.MODIFICATION_COUNT),
+            false
+        );
     }
 
     /**

@@ -6,6 +6,7 @@ import com.intellij.openapi.application.Result;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.util.Pair;
 import com.intellij.openapi.util.text.StringUtil;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.patterns.PatternCondition;
 import com.intellij.patterns.PlatformPatterns;
 import com.intellij.patterns.PsiElementPattern;
@@ -351,6 +352,33 @@ public class YamlHelper {
         return getYamlKeyValueAsString(yamlKeyValue, keyName, false);
     }
 
+    /**
+     *  foo:
+     *     class: "name"
+     *
+     *  class:
+     *   - "name"
+     *   - "test"
+     */
+    @NotNull
+    public static Collection<String> getYamlKeyValueStringOrArray(@NotNull YAMLKeyValue yamlKeyValue, @NotNull String keyName) {
+        YAMLKeyValue childrenKeyValue = getYamlKeyValue(yamlKeyValue, keyName);
+        if (childrenKeyValue == null) {
+            return Collections.emptyList();
+        }
+
+        // class: [test]
+        // class:
+        //  - "test"
+        YAMLValue value = childrenKeyValue.getValue();
+        if(value instanceof YAMLSequence) {
+          return getYamlArrayValuesAsString((YAMLSequence) value);
+        }
+
+        // class: "test"
+        return Collections.singletonList(getYamlKeyValueAsString(yamlKeyValue, keyName));
+    }
+
     @Nullable
     public static String getYamlKeyValueAsString(@NotNull YAMLKeyValue yamlKeyValue, @NotNull String keyName, boolean ignoreCase) {
 
@@ -625,23 +653,21 @@ public class YamlHelper {
      * @param yamlKeyValue the service key value to find the "tags" key on
      * @return tag names
      */
-    @Nullable
+    @NotNull
     public static Set<String> collectServiceTags(@NotNull YAMLKeyValue yamlKeyValue) {
-
         YAMLKeyValue tagsKeyValue = YamlHelper.getYamlKeyValue(yamlKeyValue, "tags");
         if(tagsKeyValue == null) {
-            return null;
+            return Collections.emptySet();
         }
 
         PsiElement tagsCompound = tagsKeyValue.getValue();
         if(!(tagsCompound instanceof YAMLSequence)) {
-            return null;
+            return Collections.emptySet();
         }
 
         Set<String> tags = new HashSet<>();
 
         for (YAMLSequenceItem yamlSequenceItem : ((YAMLSequence) tagsCompound).getItems()) {
-
             YAMLValue value = yamlSequenceItem.getValue();
             if(value instanceof YAMLMapping) {
                 // tags:
@@ -662,6 +688,26 @@ public class YamlHelper {
         }
 
         return tags;
+    }
+
+    /**
+     * acme_demo.form.type.gender:
+     *  class: espend\Form\TypeBundle\Form\FooType
+     *  tags:
+     *   - { name: foo  }
+     */
+    @NotNull
+    public static Collection<YAMLKeyValue> getTaggedServices(@NotNull YAMLFile yamlFile, @NotNull String tag) {
+        Collection<YAMLKeyValue> yamlKeyValues = new HashSet<>();
+
+        for (YAMLKeyValue yamlServiceKeyValue : YamlHelper.getQualifiedKeyValuesInFile(yamlFile, "services")) {
+            Set<String> serviceTagMap = YamlHelper.collectServiceTags(yamlServiceKeyValue);
+            if (serviceTagMap.contains(tag)) {
+                yamlKeyValues.add(yamlServiceKeyValue);
+            }
+        }
+
+        return yamlKeyValues;
     }
 
     /**
@@ -988,6 +1034,13 @@ public class YamlHelper {
     }
 
     /**
+     * Returns true if given parameter name is default value for ENV variable.
+     */
+    public static boolean isDefaultEnvValue(@NotNull String parameterName) {
+        return parameterName.length() > 5 && parameterName.startsWith("env(") && parameterName.endsWith(")");
+    }
+
+    /**
      * service_name:
      *   class: FOOBAR
      *   calls:
@@ -1218,7 +1271,7 @@ public class YamlHelper {
 
     @NotNull
     public static Collection<PhpClass> getPhpClassesInYamlFile(@NotNull YAMLFile yamlFile, @NotNull ContainerCollectionResolver.LazyServiceCollector lazyServiceCollector) {
-        Collection<PhpClass> phpClasses = new HashSet<>();
+        Collection<PhpClass> phpClasses = new HashSet<>(); //TODO
 
         for (YAMLKeyValue keyValue : YamlHelper.getQualifiedKeyValuesInFile(yamlFile, "services")) {
             YAMLValue value = keyValue.getValue();
@@ -1232,12 +1285,49 @@ public class YamlHelper {
                         phpClasses.add(serviceClass);
                     }
                 }
+
+                // My<caret>Class\:
+                //    resource: ...
+                phpClasses.addAll(YamlHelper.getNamespaceResourcesClasses(keyValue));
             } else if(value instanceof YAMLPlainTextImpl) {
                 // Foo\Bar: ~
                 String text = keyValue.getKeyText();
 
                 if (StringUtils.isNotBlank(text) && YamlHelper.isClassServiceId(text)) {
                     phpClasses.addAll(PhpElementsUtil.getClassesInterface(yamlFile.getProject(), text));
+                }
+            }
+        }
+
+        return phpClasses;
+    }
+
+    /**
+     * My<caret>Class\:
+     *  resource: '....'
+     *  exclude: '....'
+     */
+    @NotNull
+    public static Collection<PhpClass> getNamespaceResourcesClasses(@NotNull YAMLKeyValue yamlKeyValue) {
+        String valueText = yamlKeyValue.getKeyText();
+        if (StringUtils.isBlank(valueText)) {
+            return Collections.emptyList();
+        }
+
+        Collection<PhpClass> phpClasses = new HashSet<>();
+
+        if (valueText.endsWith("\\")) {
+            Collection<String> resource = YamlHelper.getYamlKeyValueStringOrArray(yamlKeyValue, "resource");
+            if (!resource.isEmpty()) {
+                PsiFile containingFile = yamlKeyValue.getContainingFile();
+                // PhpStorm 2021.1 needs file check
+                if (containingFile != null)  {
+                    VirtualFile virtualFile = containingFile.getVirtualFile();
+                    if (virtualFile != null) {
+                        phpClasses.addAll(ServiceContainerUtil.getPhpClassFromResources(
+                            yamlKeyValue.getProject(), valueText, virtualFile, resource, YamlHelper.getYamlKeyValueStringOrArray(yamlKeyValue, "exclude"))
+                        );
+                    }
                 }
             }
         }

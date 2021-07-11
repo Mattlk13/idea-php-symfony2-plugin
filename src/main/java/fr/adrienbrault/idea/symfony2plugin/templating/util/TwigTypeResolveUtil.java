@@ -19,10 +19,12 @@ import com.jetbrains.twig.TwigFile;
 import com.jetbrains.twig.TwigTokenTypes;
 import com.jetbrains.twig.elements.TwigCompositeElement;
 import com.jetbrains.twig.elements.TwigElementTypes;
+import com.jetbrains.twig.elements.TwigVariableReference;
 import fr.adrienbrault.idea.symfony2plugin.templating.TwigPattern;
 import fr.adrienbrault.idea.symfony2plugin.templating.variable.TwigFileVariableCollector;
 import fr.adrienbrault.idea.symfony2plugin.templating.variable.TwigFileVariableCollectorParameter;
 import fr.adrienbrault.idea.symfony2plugin.templating.variable.TwigTypeContainer;
+import fr.adrienbrault.idea.symfony2plugin.templating.variable.collector.StaticVariableCollector;
 import fr.adrienbrault.idea.symfony2plugin.templating.variable.dict.PsiVariable;
 import fr.adrienbrault.idea.symfony2plugin.templating.variable.resolver.FormFieldResolver;
 import fr.adrienbrault.idea.symfony2plugin.templating.variable.resolver.FormVarsResolver;
@@ -37,6 +39,8 @@ import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+
+import static fr.adrienbrault.idea.symfony2plugin.templating.TwigPattern.captureVariableOrField;
 
 /**
  * @author Daniel Espendiller <daniel@espendiller.net>
@@ -68,9 +72,9 @@ public class TwigTypeResolveUtil {
 
     // for supporting completion and navigation of one line element
     public static final String[] DOC_TYPE_PATTERN_SINGLE  = new String[] {
-        "\\{#[\\s]+(?<var>[\\w]+)[\\s]+(?<class>[\\w\\\\\\[\\]]+)[\\s]+#}",
-        "\\{#[\\s]+"+ DOC_TYPE_PATTERN_CLASS_SECOND + "[\\s]+#}",
-        "\\{#[\\s]+"+ DOC_TYPE_PATTERN_CLASS_FIRST + "[\\s]+#}",
+        "^(?<var>[\\w]+)[\\s]+(?<class>[\\w\\\\\\[\\]]+)[\\s]*$",
+        DOC_TYPE_PATTERN_CLASS_SECOND,
+        DOC_TYPE_PATTERN_CLASS_FIRST
     };
 
     private static String[] PROPERTY_SHORTCUTS = new String[] {"get", "is", "has"};
@@ -148,7 +152,7 @@ public class TwigTypeResolveUtil {
         Collection<List<TwigTypeContainer>> previousElements = new ArrayList<>();
         previousElements.add(new ArrayList<>(type));
 
-        String[] typeNames = types.toArray(new String[types.size()]);
+        String[] typeNames = types.toArray(new String[0]);
         for (int i = 1; i <= typeNames.length - 1; i++ ) {
             type = resolveTwigMethodName(type, typeNames[i], previousElements);
             previousElements.add(new ArrayList<>(type));
@@ -223,16 +227,6 @@ public class TwigTypeResolveUtil {
         return variables;
     }
 
-    private static Map<String, Set<String>> convertHashMapToTypeSet(Map<String, String> hashMap) {
-        Map<String, Set<String>> globalVars = new HashMap<>();
-
-        for(final Map.Entry<String, String> entry: hashMap.entrySet()) {
-            globalVars.put(entry.getKey(), new HashSet<>(Collections.singletonList(entry.getValue())));
-        }
-
-        return globalVars;
-    }
-
     @NotNull
     public static Map<String, PsiVariable> collectScopeVariables(@NotNull PsiElement psiElement) {
         return collectScopeVariables(psiElement, new HashSet<>());
@@ -240,35 +234,59 @@ public class TwigTypeResolveUtil {
 
     @NotNull
     public static Map<String, PsiVariable> collectScopeVariables(@NotNull PsiElement psiElement, @NotNull Set<VirtualFile> visitedFiles) {
-        Map<String, Set<String>> globalVars = new HashMap<>();
-        Map<String, PsiVariable> controllerVars = new HashMap<>();
-
         VirtualFile virtualFile = psiElement.getContainingFile().getVirtualFile();
         if(visitedFiles.contains(virtualFile)) {
-            return controllerVars;
+            return Collections.emptyMap();
         }
 
         visitedFiles.add(virtualFile);
 
+        Map<String, PsiVariable> controllerVars = new HashMap<>();
+
         TwigFileVariableCollectorParameter collectorParameter = new TwigFileVariableCollectorParameter(psiElement, visitedFiles);
         for(TwigFileVariableCollector collector: TWIG_FILE_VARIABLE_COLLECTORS.getExtensions()) {
-            collector.collect(collectorParameter, globalVars);
-            collector.collectPsiVariables(collectorParameter, controllerVars);
+            Map<String, Set<String>> globalVarsScope = new HashMap<>();
+            collector.collect(collectorParameter, globalVarsScope);
+
+            // @TODO: resolve this in change extension point, so that its only possible to provide data and dont give full scope to break / overwrite other variables
+            globalVarsScope.forEach((s, strings) -> {
+                controllerVars.putIfAbsent(s, new PsiVariable());
+                controllerVars.get(s).addTypes(strings);
+            });
+
+            // merging elements
+            Map<String, PsiVariable> controllerVars1 = new HashMap<>();
+            collector.collectPsiVariables(collectorParameter, controllerVars1);
+
+            controllerVars1.forEach((s, psiVariable) -> {
+                controllerVars.putIfAbsent(s, new PsiVariable());
+                controllerVars.get(s).addTypes(psiVariable.getTypes());
+
+                PsiElement context = psiVariable.getElement();
+                if (context != null) {
+                    controllerVars.get(s).addElements(context);
+                }
+            });
         }
 
         // globals first
-        globalVars.putAll(convertHashMapToTypeSet(findInlineStatementVariableDocBlock(psiElement, TwigElementTypes.BLOCK_STATEMENT, true)));
-        globalVars.putAll(convertHashMapToTypeSet(findInlineStatementVariableDocBlock(psiElement, TwigElementTypes.MACRO_STATEMENT, false)));
-        globalVars.putAll(convertHashMapToTypeSet(findInlineStatementVariableDocBlock(psiElement, TwigElementTypes.FOR_STATEMENT, false)));
+        Collection<Map<String, String>> vars = Arrays.asList(
+            findInlineStatementVariableDocBlock(psiElement, TwigElementTypes.BLOCK_STATEMENT, true),
+            findInlineStatementVariableDocBlock(psiElement, TwigElementTypes.MACRO_STATEMENT, false),
+            findInlineStatementVariableDocBlock(psiElement, TwigElementTypes.FOR_STATEMENT, false)
+        );
 
-        for(Map.Entry<String, Set<String>> entry: globalVars.entrySet()) {
-            Set<String> types = entry.getValue();
+        for (Map<String, String> entry : vars) {
+            entry.forEach((s, s2) -> {
+                controllerVars.putIfAbsent(s, new PsiVariable());
+                controllerVars.get(s).addType(s2);
+            });
+        }
 
-            // collect iterator
-            types.addAll(collectIteratorReturns(psiElement, entry.getValue()));
-
-            // convert to variable model
-            controllerVars.put(entry.getKey(), new PsiVariable(types, null));
+        // collect iterator
+        for(Map.Entry<String, PsiVariable> entry: controllerVars.entrySet()) {
+            PsiVariable psiVariable = entry.getValue();
+            psiVariable.addTypes(collectIteratorReturns(psiElement, psiVariable.getTypes()));
         }
 
         // check if we are in "for" scope and resolve types ending with []
@@ -337,7 +355,7 @@ public class TwigTypeResolveUtil {
         return previousElements;
     }
 
-    private static void collectForArrayScopeVariables(PsiElement psiElement, Map<String, PsiVariable> globalVars) {
+    private static void collectForArrayScopeVariables(@NotNull PsiElement psiElement, @NotNull Map<String, PsiVariable> globalVars) {
         PsiElement twigCompositeElement = PsiTreeUtil.findFirstParent(psiElement, psiElement1 -> {
             if (psiElement1 instanceof TwigCompositeElement) {
                 if (PlatformPatterns.psiElement(TwigElementTypes.FOR_STATEMENT).accepts(psiElement1)) {
@@ -354,6 +372,7 @@ public class TwigTypeResolveUtil {
         // {% for user in "users" %}
         PsiElement forTag = twigCompositeElement.getFirstChild();
         PsiElement inVariable = PsiElementUtils.getChildrenOfType(forTag, TwigPattern.getForTagInVariablePattern());
+        inVariable = inVariable instanceof TwigVariableReference ? inVariable : PsiTreeUtil.getChildOfType(inVariable, TwigVariableReference.class);
         if(inVariable == null) {
             return;
         }
@@ -402,12 +421,12 @@ public class TwigTypeResolveUtil {
         }
 
         // we already have same variable in scope, so merge types
-        if(globalVars.containsKey(scopeVariable)) {
-            globalVars.get(scopeVariable).getTypes().addAll(types);
+        PsiVariable psiVariable = globalVars.get(scopeVariable);
+        if (psiVariable != null) {
+            psiVariable.addTypes(types);
         } else {
             globalVars.put(scopeVariable, new PsiVariable(types));
         }
-
     }
 
     @NotNull
@@ -432,10 +451,18 @@ public class TwigTypeResolveUtil {
             if(phpNamedElement.getPhpNamedElement() != null) {
                 for(PhpNamedElement target : getTwigPhpNameTargets(phpNamedElement.getPhpNamedElement(), typeName)) {
                     PhpType phpType = target.getType();
-                    for(String typeString: phpType.getTypes()) {
-                        PhpNamedElement phpNamedElement1 = PhpElementsUtil.getClassInterface(phpNamedElement.getPhpNamedElement().getProject(), typeString);
-                        if(phpNamedElement1 != null) {
-                            phpNamedElements.add(new TwigTypeContainer(phpNamedElement1));
+
+                    // @TODO: provide extension
+                    // custom resolving for Twig here: "app.user" => can also be a general solution just support the "getToken()->getUser()"
+                    if (target instanceof Method && StaticVariableCollector.isUserMethod((Method) target)) {
+                        phpNamedElements.addAll(getApplicationUserImplementations(target.getProject()));
+                    }
+
+                    // @TODO: use full resolving for object, that would allow using TypeProviders and core PhpStorm feature
+                    for (String typeString: phpType.filterPrimitives().getTypes()) {
+                        PhpClass phpClass = PhpElementsUtil.getClassInterface(phpNamedElement.getPhpNamedElement().getProject(), typeString);
+                        if(phpClass != null) {
+                            phpNamedElements.add(new TwigTypeContainer(phpClass));
                         }
                     }
                 }
@@ -448,6 +475,19 @@ public class TwigTypeResolveUtil {
         }
 
         return phpNamedElements;
+    }
+
+    /**
+     * Get possible suitable UserInterface implementation from the application scope
+     */
+    @NotNull
+    private static Collection<TwigTypeContainer> getApplicationUserImplementations(@NotNull Project project) {
+        return PhpIndex.getInstance(project)
+            .getAllSubclasses("\\Symfony\\Component\\Security\\Core\\User\\UserInterface")
+            .stream()
+            .filter(phpClass -> !phpClass.isInterface()) // filter out implementation like AdvancedUserInterface
+            .map(TwigTypeContainer::new)
+            .collect(Collectors.toList());
     }
 
     private static Set<String> resolveTwigMethodName(Project project, Collection<String> previousElement, String typeName) {
@@ -593,7 +633,7 @@ public class TwigTypeResolveUtil {
         }
 
         // find next IDENTIFIER, eg skip whitespaces
-        PsiElement psiIdentifier = PsiElementUtils.getNextSiblingOfType(psiIn, PlatformPatterns.psiElement(TwigTokenTypes.IDENTIFIER));
+        PsiElement psiIdentifier = PsiElementUtils.getNextSiblingOfType(psiIn, captureVariableOrField());
         if(psiIdentifier == null) {
             return Collections.emptyList();
         }

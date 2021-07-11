@@ -3,6 +3,8 @@ package fr.adrienbrault.idea.symfony2plugin.config.yaml;
 import com.intellij.codeInsight.navigation.actions.GotoDeclarationHandler;
 import com.intellij.openapi.actionSystem.DataContext;
 import com.intellij.openapi.editor.Editor;
+import com.intellij.openapi.project.Project;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.patterns.PlatformPatterns;
 import com.intellij.patterns.PsiElementPattern;
 import com.intellij.patterns.StandardPatterns;
@@ -23,6 +25,7 @@ import fr.adrienbrault.idea.symfony2plugin.stubs.ContainerCollectionResolver;
 import fr.adrienbrault.idea.symfony2plugin.stubs.ServiceIndexUtil;
 import fr.adrienbrault.idea.symfony2plugin.templating.util.TwigUtil;
 import fr.adrienbrault.idea.symfony2plugin.util.PhpElementsUtil;
+import fr.adrienbrault.idea.symfony2plugin.util.PhpIndexUtil;
 import fr.adrienbrault.idea.symfony2plugin.util.PsiElementUtils;
 import fr.adrienbrault.idea.symfony2plugin.util.dict.ServiceUtil;
 import fr.adrienbrault.idea.symfony2plugin.util.resource.FileResourceUtil;
@@ -172,6 +175,8 @@ public class YamlGoToDeclarationHandler implements GotoDeclarationHandler {
             targets.addAll(getFactoryStringGoto(psiElement));
         }
 
+        // _instanceof:
+        //   My<caret>Class: ~
         // services:
         //   My<caret>Class: ~
         if(YamlElementPatternHelper.getServicesKeyPattern().accepts(psiElement)) {
@@ -487,16 +492,34 @@ public class YamlGoToDeclarationHandler implements GotoDeclarationHandler {
      * services:
      *   My<caret>Class: ~
      */
-    private Collection<PsiElement> getClassesForServiceKey(@NotNull PsiElement psiElement) {
+    private static Collection<PsiElement> getClassesForServiceKey(@NotNull PsiElement psiElement) {
         PsiElement parent = psiElement.getParent();
         if(parent instanceof YAMLKeyValue) {
-            String valueText = ((YAMLKeyValue) parent).getKeyText();
-            if(StringUtils.isNotBlank(valueText)) {
-                return new ArrayList<>(PhpElementsUtil.getClassesInterface(psiElement.getProject(), valueText));
-            }
+            return getClassesForServiceKey((YAMLKeyValue) parent);
         }
 
         return Collections.emptyList();
+    }
+
+    @NotNull
+    public static Collection<PsiElement> getClassesForServiceKey(@NotNull YAMLKeyValue yamlKeyValue) {
+        String valueText = yamlKeyValue.getKeyText();
+        if (StringUtils.isBlank(valueText)) {
+            return Collections.emptyList();
+        }
+
+        Collection<PsiElement> targets = new HashSet<>();
+
+        // My<caret>Class\:
+        //   resource: '....'
+        //   exclude: '....'
+        if (valueText.endsWith("\\")) {
+            targets.addAll(YamlHelper.getNamespaceResourcesClasses(yamlKeyValue));
+        }
+
+        targets.addAll(PhpElementsUtil.getClassesInterface(yamlKeyValue.getProject(), valueText));
+
+        return targets;
     }
 
     @Nullable

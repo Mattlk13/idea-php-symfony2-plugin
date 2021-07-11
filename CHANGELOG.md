@@ -2,7 +2,12 @@ Changelog
 =========
 
 # Version names
-* 0.18.x: PhpStorm 2019.1+
+* 0.23.x: PhpStorm 2021.1
+* 0.22.x: PhpStorm 2020.3+ (no support)
+* 0.21.x: PhpStorm 2020.2+ (no support)
+* 0.20.x: PhpStorm 2020.0+ (no support)
+* 0.19.x: PhpStorm 2019.2+ (no support)
+* 0.18.x: PhpStorm 2019.1+ (no support)
 * 0.17.x: PhpStorm 2018.2+ (no support)
 * 0.16.x: PhpStorm 2017.3.2+ (no support)
 * 0.15.x: PhpStorm 2017.2+ (no support)
@@ -12,6 +17,179 @@ Changelog
 * 0.11.x: PhpStorm 8, 9, 10 (no support)
 * 0.10.x: PhpStorm 7 (no support)
 * 0.9.x: PhpStorm 6 (no support)
+
+## 0.23.210
+* [#1661](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1661) Fix container nullable in yaml context (Daniel Espendiller)
+* Smarter public asset folder, fix twig form linemarker psi pattern, remove symfony check from notication window (Daniel Espendiller)
+* Update gradle git versions plugin (Daniel Espendiller)
+* Gradle to github actions migration (Daniel Espendiller)
+* Support webencore inside "encore_entry_*" twig functions (Daniel Espendiller)
+* Excluded non-public consts from !php/const autocompletion (Adam Wójs)
+* Fixed [#1631](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1631): PhpConstGotoCompletionProvider throws IndexOutOfBoundsException when cursor is before scope operator (Adam Wójs)
+
+## 0.23.209
+* [#1614](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1614) fix "ListPopupStep" issues of PhpStorm 2021.1 (Daniel Espendiller)
+* Fixed [#1640](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1640): Go to declaration throws ArrayIndexOutOfBoundsException on empty class const name (Adam Wójs)
+* Added unit test for [#1640](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1640) (Adam Wójs)
+
+## 0.23.208
+* [#1624](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1624) secure yaml key class resolving for PhpStorm 2021.3 (Daniel Espendiller)
+* PhpStorm 2021.1 gradle build (Daniel Espendiller)
+* Fixed [#1575](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1575): Inspection "Container sensitivity" is not expected to be emitted for default env values (Adam Wójs)
+* Fixed [#1599](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1599): Added protection against infinite recursion in PhpElementsUtil.getImplementedMethods (Adam Wójs)
+
+## 0.22.207
+* Removed hardcoded background in output textarea of Symfony Create Service Form (Adam Wójs)
+
+## 0.22.206
+* Support routes definition inside PHP8 attributes (Daniel Espendiller) [#1567](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1567)
+* Higher java compatibility version for builds (Daniel Espendiller)
+
+## 0.22.205
+* Change gradle build to use PhpStorm 2020.3.1 packages (Daniel Espendiller)
+* 2020.3 support: fix yaml indents (Aleksandr Slapoguzov) [#1568](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1568)
+* 2020.3 support: handle a new psi structure for twig variables and fields (Aleksandr Slapoguzov) [#1568](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1568)
+* 2020.3 support: removed go_to_declaration_handler for sets because now it works out of the box (Aleksandr Slapoguzov) [#1568](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1568)
+* 2020.3 support: removed invalid case - else branch cannot contain any conditions (Aleksandr Slapoguzov) [#1568](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1568)
+* 2020.3 support: bump plugin versions (Aleksandr Slapoguzov) [#1568](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1568)
+
+## 0.21.204
+* Support autowired resources services inside "argument bind" navigation (Daniel Espendiller)
+* Support arrays for "resource" and "exclude" on autowrite which is use on Symfony >= 5 as default instead of global pattern (Daniel Espendiller)
+* Support form "help" option inside translations (Daniel Espendiller)
+
+## 0.21.203
+* Fix typo in build instructions (Matthias Gutjahr)
+* Remove leading slash from storage location ([#1543](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1543)) (Jens Schulze)
+
+## 0.21.202
+* Only "form" and "form_start" are valid linemarker on Twig types (Daniel Espendiller)
+* Support for PhpStorm 2020.2: get rid of start comment tokens in doc patterns & migrate to non-atomic PsiComment structure (Aleksandr Slapoguzov)
+* Support for PhpStorm 2020.2: process all class references for parameter (union types support) - now a parameter can contain several class references (Aleksandr Slapoguzov)
+* Support for PhpStorm 2020.2: change signatures for LineMarkerProvider implementations (Aleksandr Slapoguzov)
+
+## 0.20.201
+* Use simple code flow for formBuilder field extraction (Daniel Espendiller)
+* Support form type extraction of FormFactoryInterface::createNamed inside Twig type resolving (Daniel Espendiller)
+* Provide form type linemarker inside Twig templates and provide navigation and extended completion for form fields (Daniel Espendiller)
+
+## 0.20.200
+* Change annotation controller icon and provide link to Symfony documentation (Daniel Espendiller)
+* Catch exception for nested resource glob resource syntax [#1517](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1517) (Daniel Espendiller)
+* Provide navigation targets for service definition inside php files (Daniel Espendiller)
+* Provide navigation, completion and linemarker for "Constraint::message\*" properties (Daniel Espendiller)
+* Dont mark abstract classes inside service linemarker (Daniel Espendiller)
+
+## 0.20.199
+* Support constraint translation message navigation and completion in annotations (Daniel Espendiller)
+* Provide linemarker for yaml service resource (Daniel Espendiller)
+* Add navigation for services inside "\_instanceof" yaml keys (Daniel Espendiller)
+
+## 0.20.198
+* Fix TwigPath caching issue on extracting config path from yaml file [#1358](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1358) [#1506](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1506) (Daniel Espendiller)
+* Use Service index key as cache indicator (Daniel Espendiller)
+* Fix configuration file resolving for YAML file on startup: "class org.jetbrains.plugins.textmate.psi.TextMateFile cannot be cast to class org.jetbrains.yaml.psi.YAMLFile" [#1492](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1492) (Daniel Espendiller)
+* Index tag attributes of services (Daniel Espendiller)
+* Fix possible array issues on service resource linemarker (Daniel Espendiller)
+
+## 0.20.197
+* Provide checkbox to disable Twig file icon decoration [#1485](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1485) (Daniel Espendiller)
+* Enrich compile service data with metadata indexer to support configuration like autowire (Daniel Espendiller)
+* Use internal icons for service linemarker (Daniel Espendiller)
+* Provide linemarker for a constructor which supports autowire (Daniel Espendiller)
+* Provide yaml navigation for services defined via resource (Daniel Espendiller)
+* Provide resources index for service and use it in linemarker classes to indicate it and also provide a tagged icon (Daniel Espendiller)
+
+## 0.20.196
+* Ignore Doctrine repository return type provider on magic method pattern if already in repository [#1481](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1481) (Daniel Espendiller)
+* Provide custom Twig file overlay to indicate "extends" and attached controller template types [#1485](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1485) (Daniel Espendiller)
+* Index service definition for PHP files (Daniel Espendiller)
+* Support global Symfony DIC function: "service" and "param" (Daniel Espendiller)
+
+## 0.20.195
+* Fix possible long signature truncate and split on type resolver for repository find* (Daniel Espendiller)
+
+## 0.20.194
+* Support direct type resolving "ObjectRepository:find\*" usages without having getRepository having in same context (Daniel Espendiller)
+* Support querybuilder model resolving parent constructor call of ServiceEntityRepository (Daniel Espendiller)
+* Ignore trait class in Doctrine Entity folder (Daniel Espendiller)
+* Support type resolving for magic Doctrine methods "findBy\*" "findOneBy\*" #149 (Daniel Espendiller)
+* Support traits and extends class resolving in Doctrine annotation metadata (Daniel Espendiller)
+* Doctrine ORM target entity should support class constant resolving #1468 (Daniel Espendiller)
+* Refactor Doctrine repositoryClass fetching via class constants to support Symfony 5.1 maker bundle style #1468 (Daniel Espendiller)
+* Migrate all type provider to "PhpTypeProvider4" extension (Daniel Espendiller)
+* Use getIndexModificationStamp to cache index result based on it index change key (Daniel Espendiller)
+* Remove support for PhpStorm versions < "2020.1" (Daniel Espendiller)
+* Migrate Doctrine entity type resolving for "find\*" methods #1434 (Daniel Espendiller)
+
+## 0.19.193
+* Filter some special debug service and move the into lower priority (Daniel Espendiller)
+* Extract project directory from the file context; use directly the project to prevent "com.intellij.util.indexing.FileContentImpl$IllegalDataException: Cannot obtain text for binary file type : Unknown" on xlf files #1459 (Daniel Espendiller)
+
+## 0.19.192
+* Allow to disable Twig bundle namespace and support in autoconfigure (Daniel Espendiller)
+* Wrapped the deprecated "getBaseDir" for getting the project root directory (Daniel Espendiller)
+* Bundle ending is not needed for Twig namespaces (Daniel Espendiller)
+* Added reference and inspection support for TranslatorHelper ([#1454](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1420)) (Thomas Schulz)
+* Add support for service class inside tag adding indention (Daniel Espendiller)
+* Provide completion support for named argument inside yaml arguments context (Daniel Espendiller)
+* Add support for autocompletion inside the MessageSubscriberInterface::getHandledMessages method (Stefano Arlandini)
+
+## 0.19.191
+* Filter out service id which are random like service\_locator from compiled service container file (Daniel Espendiller)
+* Replace CachedValuesManager#createCachedValue usage with direct fetch and build result API #getCachedValue (Daniel Espendiller)
+* Take "controller.service\_arguments" for yaml named arguments of controller binding into account (Daniel Espendiller)
+* Support usage of translation domain adding "resource\_files" compiled debug container (Daniel Espendiller)
+* Refactored the compiled translation target handling based on container debug file (Daniel Espendiller)
+* Provide better detection for translation directory inside based on the cached "translations" folder (Daniel Espendiller)
+
+## 0.19.190
+* Support changes in path extraction for "twig.loader" (Daniel Espendiller)
+* Support more use cases for compiled service path detection (Daniel Espendiller)
+* Provide relative path support for Twig paths configuration via yaml (Daniel Espendiller)
+* Provide support for compiled Symfony 4 / 5 route names (Daniel Espendiller)
+
+## 0.19.189
+* Provide resolving of Twig globals and variables with multiple types and targets (Daniel Espendiller) [#1421](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1421)
+* Support also "yaml" for config files to extract the globals (Daniel Espendiller) [#1420](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1420)
+
+## 0.19.188
+* Provide controller render navigation from PHP controller to its template (Daniel Espendiller) [#1418](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1418)
+* Support user implementation resolving for Twig "app.user" usages (Daniel Espendiller) [#1416](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1416)
+* Support multiple Twig global types on same variable like "app" (Daniel Espendiller) [#1415](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1415)
+* Provide deprecated inspection for Twig token tags on PhpClass (Daniel Espendiller) [#1414](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1414)
+* Support Twig functions in "for" statements (Daniel Espendiller) [#1413](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1413)
+* Remove parent check for Twig tags to fix force implemented token TAG by PhpStorm like spaceless; support end tags to be navigation targets (Daniel Espendiller) [#1412](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1412)
+* Fix template usage extraction issues with inline method reference using wrong type cast [#1410](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1410) (Daniel Espendiller)
+* Support Twig function navigation inside IF statement (Daniel Espendiller) [#1408](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1408)
+* Attempt to use new persistance namespaces without breaking BC (Jakub Caban) [#1407](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1407)
+
+## 0.19.187
+* Support shortcuts instances of "Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController" (Daniel Espendiller) [#1401](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1401) [#1405](https://github.com/Haehnchen/idea-php-symfony2-plugin/pull/1405)
+* Support Symfony5 / DoctrineBundle 2 persistence library interface (Daniel Espendiller) [#1401](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1401) [#1404](https://github.com/Haehnchen/idea-php-symfony2-plugin/pull/1404)
+* Support indexing of template assignment expression for Twig template names (Daniel Espendiller) [#1400](https://github.com/Haehnchen/idea-php-symfony2-plugin/pull/1400)
+* Added support for namespaced Twig classes (Marcel Rummens) [#1394](https://github.com/Haehnchen/idea-php-symfony2-plugin/pull/1394)
+
+## 0.19.186
+* Twig settings are not available while indexing (Ruud Kamphuis) [#1393](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1393)
+* Fix browse folder buttons (Ruud Kamphuis) [#1392](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1392)
+* WebDeploymentIcons.Download will be removed soon (Elena Shaverdova) [#1390](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1390)
+* Support new snake_case templates (Ruud Kamphuis) [#1389](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1389)
+
+## 0.19.185
+* Add support for Twig apply tag filters (Daniel Espendiller) [#1388](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1388)
+
+## 0.19.184
+* Provide extension for twig include and extends usage (Daniel Espendiller)
+
+## 0.18.183
+* Add linemarker icon for navigate to "extends" tag of the given Twig [#1376](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1376) (Daniel Espendiller)
+* Optimize Twig "extends" tag indexing performance [#1374](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1374) (Daniel Espendiller)
+
+## 0.18.182
+* Remove custom related template search for controller and migrate to indexer visitor [#1370](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1370) (Daniel Espendiller)
+* Provide template guesser for @Template with default property is empty [#1368](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1368) (Daniel Espendiller)
+* Added path for default debug container in Symfony 4 [#1367](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1367) (Artem Oliynyk)
 
 ## 0.18.181
 * Completion for YAML tags, keywords and PHP constants [#1336](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1336) [#1364](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/1364) (Thomas Schulz)

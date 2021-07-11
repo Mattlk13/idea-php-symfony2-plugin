@@ -1,7 +1,7 @@
 package fr.adrienbrault.idea.symfony2plugin.tests.util.yaml;
 
-import com.intellij.openapi.application.ApplicationInfo;
 import com.intellij.psi.PsiElement;
+import com.intellij.psi.PsiFile;
 import com.intellij.util.Function;
 import com.intellij.util.containers.ContainerUtil;
 import com.jetbrains.php.lang.psi.elements.Parameter;
@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * @author Daniel Espendiller <daniel@espendiller.net>
@@ -152,6 +153,39 @@ public class YamlHelperLightTest extends SymfonyLightCodeInsightFixtureTestCase 
     }
 
     /**
+     * @see fr.adrienbrault.idea.symfony2plugin.util.yaml.YamlHelper#getYamlKeyValueStringOrArray
+     */
+    public void testGetYamlKeyValueStringOrArray() {
+        YAMLKeyValue fromText = YamlPsiElementFactory.createFromText(getProject(), YAMLKeyValue.class, "" +
+            "foo:\n" +
+            "   tags: 'foo'\n"
+        );
+
+        Collection<String> tags = YamlHelper.getYamlKeyValueStringOrArray(fromText,"tags");
+        assertTrue(tags.stream().anyMatch("foo"::equalsIgnoreCase));
+
+        YAMLKeyValue fromText2 = YamlPsiElementFactory.createFromText(getProject(), YAMLKeyValue.class, "" +
+            "foo:\n" +
+            "   tags: ['bar1', 'bar2']\n"
+        );
+
+        Collection<String> tags2 = YamlHelper.getYamlKeyValueStringOrArray(fromText2,"tags");
+        assertTrue(tags2.stream().anyMatch("bar1"::equalsIgnoreCase));
+        assertTrue(tags2.stream().anyMatch("bar2"::equalsIgnoreCase));
+
+        YAMLKeyValue fromText3 = YamlPsiElementFactory.createFromText(getProject(), YAMLKeyValue.class, "" +
+            "foo:\n" +
+            "   tags:\n" +
+            "       - foo1\n" +
+            "       - foo2\n"
+        );
+
+        Collection<String> tags3 = YamlHelper.getYamlKeyValueStringOrArray(fromText3,"tags");
+        assertTrue(tags3.stream().anyMatch("foo1"::equalsIgnoreCase));
+        assertTrue(tags3.stream().anyMatch("foo2"::equalsIgnoreCase));
+    }
+
+    /**
      * @see fr.adrienbrault.idea.symfony2plugin.util.yaml.YamlHelper#collectServiceTags
      */
     public void testCollectServiceTags() {
@@ -192,7 +226,7 @@ public class YamlHelperLightTest extends SymfonyLightCodeInsightFixtureTestCase 
     public void testCollectServiceTagsForSymfony33TagsShortcutInline() {
         YAMLKeyValue fromText = YamlPsiElementFactory.createFromText(getProject(), YAMLKeyValue.class, "" +
             "foo:\n" +
-            "  tags: [routing.loader_tags_3, routing.loader_tags_4]\n"
+            "  tags: [routing.loader_tags_3, routing.loader_tags_4, 'routing.loader_tags_5']\n"
         );
 
         assertNotNull(fromText);
@@ -200,6 +234,7 @@ public class YamlHelperLightTest extends SymfonyLightCodeInsightFixtureTestCase 
 
         assertContainsElements(collection, "routing.loader_tags_3");
         assertContainsElements(collection, "routing.loader_tags_4");
+        assertContainsElements(collection, "routing.loader_tags_5");
     }
 
     /**
@@ -267,8 +302,8 @@ public class YamlHelperLightTest extends SymfonyLightCodeInsightFixtureTestCase 
         assertEquals("" +
             "foo:\n" +
             "   bar:\n" +
-            "       car: test\n" +
-            "       apple: value",
+            "     car: test\n" +
+            "     apple: value",
             yamlFile.getText()
         );
     }
@@ -337,31 +372,16 @@ public class YamlHelperLightTest extends SymfonyLightCodeInsightFixtureTestCase 
 
         YamlHelper.insertKeyIntoFile(yamlFile, yamlKeyValue, "services");
 
-        ApplicationInfo instance = ApplicationInfo.getInstance();
-        String minorVersion = instance.getMinorVersionMainPart();
-        if (instance.getMajorVersion().equals("2019") || (instance.getMajorVersion().equals("2018") && Integer.valueOf(minorVersion) >= 3)) {
-            assertEquals("" +
-                            "services:\n" +
-                            "   foo:\n" +
-                            "       car: test\n" +
-                            "   my_service:\n" +
-                            "     class: foo\n" +
-                            "     tag:\n" +
-                            "       - foo",
-                    yamlFile.getText()
-            );
-        } else {
-            assertEquals("" +
-                            "services:\n" +
-                            "   foo:\n" +
-                            "       car: test\n" +
-                            "   my_service:\n" +
-                            "     class: foo\n" +
-                            "     tag:\n" +
-                            "     - foo",
-                    yamlFile.getText()
-            );
-        }
+        String text = yamlFile.getText();
+        assertEquals("services:\n" +
+                "  foo:\n" +
+                "       car: test\n" +
+                "  my_service:\n" +
+                "    class: foo\n" +
+                "    tag:\n" +
+                "      - foo",
+            text
+        );
     }
 
     /**
@@ -549,6 +569,25 @@ public class YamlHelperLightTest extends SymfonyLightCodeInsightFixtureTestCase 
 
         psiElement = myFixture.getFile().findElementAt(myFixture.getCaretOffset());
         assertEquals("ClassName\\Foo", YamlHelper.getServiceDefinitionClassFromTagMethod(psiElement));
+    }
+
+    public void testGetTaggedServices() {
+        PsiFile psiFile = myFixture.configureByText(YAMLFileType.YML, "" +
+            "services:\n" +
+            "   foobar:\n" +
+            "       class: ClassName\\Foo\n" +
+            "       tags:\n" +
+            "           - { name: crossHint.test_222 }\n" +
+            "   foobar2:\n" +
+            "       class: ClassName\\Foo\n" +
+            "       tags: [ 'test.11' ]\n"
+        );
+
+        Collection<YAMLKeyValue> taggedServices1 = YamlHelper.getTaggedServices((YAMLFile) psiFile, "crossHint.test_222");
+        assertTrue(taggedServices1.stream().anyMatch(yamlKeyValue -> "foobar".equals(yamlKeyValue.getKey().getText())));
+
+        Collection<YAMLKeyValue> taggedServices2 = YamlHelper.getTaggedServices((YAMLFile) psiFile, "test.11");
+        assertTrue(taggedServices2.stream().anyMatch(yamlKeyValue -> "foobar2".equals(yamlKeyValue.getKey().getText())));
     }
 
     private int getIndentForTextContent(@NotNull String content) {

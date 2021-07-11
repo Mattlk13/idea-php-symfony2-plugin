@@ -15,8 +15,11 @@
     </parameters>
 
     <services>
+        <defaults autowire="true"/>
+
         <service id="foo.xml_id" class="AppBundle\Controller\DefaultController"/>
-        <service id="foo.xml_id.private" class="AppBundle\Controller\DefaultController" public="false"/>
+        <service id="foo.xml_id.private" class="AppBundle\Controller\DefaultController" public="false" autowire="false"/>
+        <service id="foo.xml_id.invalid_autowire" class="AppBundle\Controller\DefaultController" public="false" autowire="false"/>
         <service id="foo.xml_id.alias" alias="foo.xml_id" />
         <service id="foo.xml_id.UPPER" class="AppBundle\Controller\DefaultController"/>
         <service id="foo.xml_id.slash" class="\AppBundle\Controller\DefaultController"/>
@@ -30,6 +33,15 @@
                  decoration-inner-name="espend.my_bar_customer_inner.inner_foo">
         </service>
 
+        <prototype namespace="App\Xml\"
+                   resource="../src/*"
+                   exclude="../src/{DependencyInjection,Entity,Migrations,Tests,Kernel.php}"/>
+
+        <service id="foo.tagged.xml_type" class="AppBundle\Controller\DefaultController">
+            <tag name="xml_type_tag"/>
+        </service>
+
+        <service id="My\FooClass"/>
     </services>
 
 </container>

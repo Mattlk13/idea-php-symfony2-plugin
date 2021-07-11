@@ -31,6 +31,9 @@ public class PhpConfigReferenceContributor extends PsiReferenceContributor {
 
             // Symfony 3.3 / 3.4
             .addCall("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\ControllerTrait", "has")
+
+            // Symfony 4
+            .addCall("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController", "has")
         );
 
         psiReferenceRegistrar.registerReferenceProvider(PhpElementsUtil.getMethodWithFirstStringPattern(), new PhpStringLiteralExpressionReference(ServiceIndexedReference.class)
@@ -73,6 +76,22 @@ public class PhpConfigReferenceContributor extends PsiReferenceContributor {
                         !phpStringLiteralExpressionClassReference("\\Symfony\\Component\\DependencyInjection\\Alias", 0, psiElement) &&
                         !phpStringLiteralExpressionClassReference("\\Symfony\\Component\\DependencyInjection\\DefinitionDecorator", 0, psiElement)
                     ) {
+                        return new PsiReference[0];
+                    }
+
+                    return new PsiReference[]{ new ServiceReference((StringLiteralExpression) psiElement, true) };
+                }
+            }
+        );
+
+        // service('<caret>'), ref('<caret>') (ref is deprecated)
+        psiReferenceRegistrar.registerReferenceProvider(
+            PhpElementsUtil.getFunctionWithFirstStringPattern("service", "ref"),
+            new PsiReferenceProvider() {
+                @NotNull
+                @Override
+                public PsiReference[] getReferencesByElement(@NotNull PsiElement psiElement, @NotNull ProcessingContext processingContext) {
+                    if (!Symfony2ProjectComponent.isEnabled(psiElement)) {
                         return new PsiReference[0];
                     }
 
@@ -143,7 +162,7 @@ public class PhpConfigReferenceContributor extends PsiReferenceContributor {
         }
 
         ParameterList parameterList = (ParameterList) psiElement.getContext();
-        if (parameterList == null || !(parameterList.getContext() instanceof NewExpression)) {
+        if (!(parameterList.getContext() instanceof NewExpression)) {
             return false;
         }
 

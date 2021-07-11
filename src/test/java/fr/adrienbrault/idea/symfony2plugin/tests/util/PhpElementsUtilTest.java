@@ -2,6 +2,7 @@ package fr.adrienbrault.idea.symfony2plugin.tests.util;
 
 import com.intellij.psi.PsiElement;
 import com.intellij.util.containers.ContainerUtil;
+import com.jetbrains.php.PhpIndex;
 import com.jetbrains.php.lang.PhpFileType;
 import com.jetbrains.php.lang.psi.PhpPsiElementFactory;
 import com.jetbrains.php.lang.psi.elements.*;
@@ -10,7 +11,9 @@ import fr.adrienbrault.idea.symfony2plugin.util.MethodMatcher;
 import fr.adrienbrault.idea.symfony2plugin.util.PhpElementsUtil;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 
 /**
  * @author Daniel Espendiller <daniel@espendiller.net>
@@ -27,18 +30,22 @@ public class PhpElementsUtilTest extends SymfonyLightCodeInsightFixtureTestCase 
     }
 
     /**
-     * @see fr.adrienbrault.idea.symfony2plugin.util.PhpElementsUtil#getMethodParameterTypeHint
+     * @see fr.adrienbrault.idea.symfony2plugin.util.PhpElementsUtil#getMethodParameterTypeHints
      */
     public void testGetMethodParameterClassHint() {
-        assertEquals("\\DateTime", PhpElementsUtil.getMethodParameterTypeHint(
+        assertEquals(Collections.singletonList("\\DateTime"), PhpElementsUtil.getMethodParameterTypeHints(
             PhpPsiElementFactory.createMethod(getProject(), "function foo(\\DateTime $e) {}")
         ));
 
-        assertEquals("\\Iterator", PhpElementsUtil.getMethodParameterTypeHint(
+        assertEquals(Arrays.asList("\\DateTime", "\\DateInterval"), PhpElementsUtil.getMethodParameterTypeHints(
+            PhpPsiElementFactory.createMethod(getProject(), "function foo(\\DateTime|\\DateInterval $e) {}")
+        ));
+
+        assertEquals(Collections.singletonList("\\Iterator"), PhpElementsUtil.getMethodParameterTypeHints(
             PhpPsiElementFactory.createMethod(getProject(), "function foo(/* foo */ \\Iterator $a, \\DateTime $b")
         ));
 
-        assertNull(PhpElementsUtil.getMethodParameterTypeHint(
+        assertEmpty(PhpElementsUtil.getMethodParameterTypeHints(
             PhpPsiElementFactory.createMethod(getProject(), "function foo(/* foo */ $a, \\DateTime $b")
         ));
     }
@@ -300,5 +307,21 @@ public class PhpElementsUtilTest extends SymfonyLightCodeInsightFixtureTestCase 
         assertContainsElements(PhpElementsUtil.StringResolver.findStringValues(PhpPsiElementFactory.createPhpPsiFromText(getProject(), BinaryExpression.class, "<?php foo($var ?? 'test.html');")), "test.html");
         assertContainsElements(PhpElementsUtil.StringResolver.findStringValues(PhpPsiElementFactory.createPhpPsiFromText(getProject(), ParameterList.class, "<?php $var = 'test.html'; foo($var);").getFirstPsiChild()), "test.html");
         assertContainsElements(PhpElementsUtil.StringResolver.findStringValues(PhpPsiElementFactory.createPhpPsiFromText(getProject(), TernaryExpression.class, "<?php $var = 'test.html'; $x = true == true ? $var : 'test2.html';")), "test.html", "test2.html");
+    }
+
+    public void testGetImplementedMethodsForRecursiveClassHierarchy() {
+        myFixture.addFileToProject("First.php", "<?php class First extends Second { public function method() {} }");
+        myFixture.addFileToProject("Second.php", "<?php class Second extends First { public function method() {} }");
+
+        var firstClass = PhpIndex.getInstance(getProject()).getClassByName("First");
+        var secondClass = PhpIndex.getInstance(getProject()).getClassByName("Second");
+
+        var actualResult = PhpElementsUtil.getImplementedMethods(
+            secondClass.findOwnMethodByName("method")
+        );
+
+        assertSize(2, actualResult);
+        assertEquals(secondClass.findOwnMethodByName("method"), actualResult[0]);
+        assertEquals(firstClass.findOwnMethodByName("method"), actualResult[1]);
     }
 }

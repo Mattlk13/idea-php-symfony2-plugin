@@ -4,6 +4,9 @@ import com.intellij.psi.PsiElement;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Collection;
+import java.util.Collections;
+
 /**
  * @author Daniel Espendiller <daniel@espendiller.net>
  */
@@ -22,6 +25,12 @@ public class DummyAttributeValue implements AttributeValueInterface {
         return null;
     }
 
+    @NotNull
+    @Override
+    public Collection<String> getStringArray(@NotNull String key) {
+        return Collections.emptySet();
+    }
+
     @Nullable
     @Override
     public Boolean getBoolean(@NotNull String key) {
@@ -38,6 +47,12 @@ public class DummyAttributeValue implements AttributeValueInterface {
     @Override
     public Boolean getBoolean(@NotNull String key, Boolean defaultValue) {
         return defaultValue;
+    }
+
+    @NotNull
+    @Override
+    public Collection<String> getTags() {
+        return Collections.emptySet();
     }
 
     @NotNull

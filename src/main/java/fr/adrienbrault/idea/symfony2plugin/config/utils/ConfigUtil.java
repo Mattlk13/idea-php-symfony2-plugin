@@ -11,6 +11,7 @@ import com.jetbrains.php.PhpIndex;
 import com.jetbrains.php.lang.psi.elements.*;
 import fr.adrienbrault.idea.symfony2plugin.util.FilesystemUtil;
 import fr.adrienbrault.idea.symfony2plugin.util.PhpElementsUtil;
+import fr.adrienbrault.idea.symfony2plugin.util.ProjectUtil;
 import org.apache.commons.lang.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.yaml.YAMLFileType;
@@ -30,17 +31,12 @@ public class ConfigUtil {
      */
     @NotNull
     public static Map<String, Collection<String>> getTreeSignatures(@NotNull Project project) {
-        CachedValue<Map<String, Collection<String>>> cache = project.getUserData(TREE_SIGNATURE_CACHE);
-
-        if (cache == null) {
-            cache = CachedValuesManager.getManager(project).createCachedValue(() ->
-                    CachedValueProvider.Result.create(visitTreeSignatures(project), PsiModificationTracker.MODIFICATION_COUNT)
-                , false);
-
-            project.putUserData(TREE_SIGNATURE_CACHE, cache);
-        }
-
-        return cache.getValue();
+        return CachedValuesManager.getManager(project).getCachedValue(
+            project,
+            TREE_SIGNATURE_CACHE,
+            () -> CachedValueProvider.Result.create(visitTreeSignatures(project), PsiModificationTracker.MODIFICATION_COUNT),
+            false
+        );
     }
 
     @NotNull
@@ -161,18 +157,22 @@ public class ConfigUtil {
 
     /**
      * app/config[..].yml
+     * app/config[..].yaml
      * config/packages/twig.yml
+     * config/packages/twig.yaml
      */
     public static Collection<VirtualFile> getConfigurations(@NotNull Project project, @NotNull String packageName) {
         Collection<String[]> paths = Arrays.asList(
             new String[] {"config", "packages", packageName +".yml"},
-            new String[] {"config", "packages", packageName, "config.yaml"}
+            new String[] {"config", "packages", packageName +".yaml"},
+            new String[] {"config", "packages", packageName, "config.yaml"},
+            new String[] {"config", "packages", packageName, "config.yml"}
         );
 
         Collection<VirtualFile> virtualFiles = new HashSet<>();
 
         for (String[] path : paths) {
-            VirtualFile configFile = VfsUtil.findRelativeFile(project.getBaseDir(), path);
+            VirtualFile configFile = VfsUtil.findRelativeFile(ProjectUtil.getProjectDir(project), path);
             if(configFile != null) {
                 virtualFiles.add(configFile);
             }

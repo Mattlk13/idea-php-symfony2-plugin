@@ -11,26 +11,40 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.util.NotNullLazyValue;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
+import com.intellij.patterns.PlatformPatterns;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
 import com.intellij.psi.presentation.java.SymbolPresentationUtil;
 import com.intellij.psi.search.GlobalSearchScope;
+import com.intellij.psi.util.PsiTreeUtil;
 import com.intellij.util.ConstantFunction;
 import com.intellij.util.indexing.FileBasedIndex;
 import com.jetbrains.php.PhpIcons;
 import com.jetbrains.php.lang.psi.elements.Function;
+import com.jetbrains.php.lang.psi.elements.PhpClass;
 import com.jetbrains.twig.TwigFile;
 import com.jetbrains.twig.TwigFileType;
+import com.jetbrains.twig.TwigTokenTypes;
 import com.jetbrains.twig.elements.TwigElementTypes;
+import com.jetbrains.twig.elements.TwigFieldReference;
+import com.jetbrains.twig.elements.TwigPsiReference;
+import com.jetbrains.twig.elements.TwigVariableReference;
 import fr.adrienbrault.idea.symfony2plugin.Symfony2Icons;
 import fr.adrienbrault.idea.symfony2plugin.Symfony2ProjectComponent;
 import fr.adrienbrault.idea.symfony2plugin.dic.RelatedPopupGotoLineMarker;
+import fr.adrienbrault.idea.symfony2plugin.stubs.indexes.TwigExtendsStubIndex;
 import fr.adrienbrault.idea.symfony2plugin.stubs.indexes.TwigIncludeStubIndex;
+import fr.adrienbrault.idea.symfony2plugin.templating.util.TwigTypeResolveUtil;
 import fr.adrienbrault.idea.symfony2plugin.templating.util.TwigUtil;
+import fr.adrienbrault.idea.symfony2plugin.templating.variable.TwigTypeContainer;
+import fr.adrienbrault.idea.symfony2plugin.templating.variable.resolver.holder.FormDataHolder;
 import fr.adrienbrault.idea.symfony2plugin.twig.loader.FileImplementsLazyLoader;
 import fr.adrienbrault.idea.symfony2plugin.twig.loader.FileOverwritesLazyLoader;
 import fr.adrienbrault.idea.symfony2plugin.twig.utils.TwigBlockUtil;
+import fr.adrienbrault.idea.symfony2plugin.util.PhpElementsUtil;
+import fr.adrienbrault.idea.symfony2plugin.util.ProjectUtil;
+import fr.adrienbrault.idea.symfony2plugin.util.PsiElementUtils;
 import icons.TwigIcons;
 import org.apache.commons.lang.StringUtils;
 import org.jetbrains.annotations.NotNull;
@@ -44,7 +58,7 @@ import java.util.*;
  */
 public class TwigLineMarkerProvider implements LineMarkerProvider {
     @Override
-    public void collectSlowLineMarkers(@NotNull List<PsiElement> psiElements, @NotNull Collection<LineMarkerInfo> results) {
+    public void collectSlowLineMarkers(@NotNull List<? extends PsiElement> psiElements, @NotNull Collection<? super LineMarkerInfo<?>> results) {
         if(psiElements.size() == 0 || !Symfony2ProjectComponent.isEnabled(psiElements.get(0))) {
             return;
         }
@@ -59,13 +73,18 @@ public class TwigLineMarkerProvider implements LineMarkerProvider {
 
                 // find foreign file references tags like:
                 // include, embed, source, from, import, ...
-                LineMarkerInfo lineIncludes = attachIncludes((TwigFile) psiElement);
+                LineMarkerInfo<?> lineIncludes = attachIncludes((TwigFile) psiElement);
                 if(lineIncludes != null) {
                     results.add(lineIncludes);
                 }
 
+                LineMarkerInfo<?> extending = attachExtends((TwigFile) psiElement);
+                if(extending != null) {
+                    results.add(extending);
+                }
+
                 // eg bundle overwrites
-                LineMarkerInfo overwrites = attachOverwrites((TwigFile) psiElement);
+                LineMarkerInfo<?> overwrites = attachOverwrites((TwigFile) psiElement);
                 if(overwrites != null) {
                     results.add(overwrites);
                 }
@@ -77,7 +96,7 @@ public class TwigLineMarkerProvider implements LineMarkerProvider {
                     implementsMap.put(virtualFile, new FileImplementsLazyLoader(psiElement.getProject(), virtualFile));
                 }
 
-                LineMarkerInfo lineImpl = attachBlockImplements(psiElement, implementsMap.get(virtualFile));
+                LineMarkerInfo<?> lineImpl = attachBlockImplements(psiElement, implementsMap.get(virtualFile));
                 if(lineImpl != null) {
                     results.add(lineImpl);
                 }
@@ -86,7 +105,12 @@ public class TwigLineMarkerProvider implements LineMarkerProvider {
                     fileOverwritesLazyLoader = new FileOverwritesLazyLoader(psiElements.get(0).getProject());
                 }
 
-                LineMarkerInfo lineOverwrites = attachBlockOverwrites(psiElement, fileOverwritesLazyLoader);
+                LineMarkerInfo<?> lineOverwrites = attachBlockOverwrites(psiElement, fileOverwritesLazyLoader);
+                if(lineOverwrites != null) {
+                    results.add(lineOverwrites);
+                }
+            } else if(TwigPattern.getFunctionPattern("form_start", "form", "form_end", "form_rest").accepts(psiElement)) {
+                LineMarkerInfo<?> lineOverwrites = attachFormType(psiElement);
                 if(lineOverwrites != null) {
                     results.add(lineOverwrites);
                 }
@@ -94,7 +118,7 @@ public class TwigLineMarkerProvider implements LineMarkerProvider {
         }
     }
 
-    private void attachController(@NotNull TwigFile twigFile, @NotNull Collection<? super RelatedItemLineMarkerInfo> result) {
+    private void attachController(@NotNull TwigFile twigFile, @NotNull Collection<? super RelatedItemLineMarkerInfo<?>> result) {
 
         Set<Function> methods = new HashSet<>();
 
@@ -113,7 +137,8 @@ public class TwigLineMarkerProvider implements LineMarkerProvider {
         result.add(builder.createLineMarkerInfo(twigFile));
     }
 
-    private LineMarkerInfo attachIncludes(@NotNull TwigFile twigFile) {
+    @Nullable
+    private LineMarkerInfo<?> attachIncludes(@NotNull TwigFile twigFile) {
         Collection<String> templateNames = TwigUtil.getTemplateNamesForFile(twigFile);
 
         boolean found = false;
@@ -144,7 +169,38 @@ public class TwigLineMarkerProvider implements LineMarkerProvider {
     }
 
     @Nullable
-    private LineMarkerInfo attachOverwrites(@NotNull TwigFile twigFile) {
+    private LineMarkerInfo<?> attachExtends(@NotNull TwigFile twigFile) {
+        Collection<String> templateNames = TwigUtil.getTemplateNamesForFile(twigFile);
+
+        boolean found = false;
+        for(String templateName: templateNames) {
+            Project project = twigFile.getProject();
+
+            Collection<VirtualFile> containingFiles = FileBasedIndex.getInstance().getContainingFiles(
+                TwigExtendsStubIndex.KEY, templateName, GlobalSearchScope.getScopeRestrictedByFileTypes(GlobalSearchScope.allScope(project), TwigFileType.INSTANCE)
+            );
+
+            // stop on first target, we load them lazily afterwards
+            if(containingFiles.size() > 0) {
+                found = true;
+                break;
+            }
+        }
+
+        if(!found) {
+            return null;
+        }
+
+        NavigationGutterIconBuilder<PsiElement> builder = NavigationGutterIconBuilder.create(PhpIcons.IMPLEMENTED)
+            .setTargets(new TemplateExtendsLazyTargets(twigFile.getProject(), twigFile.getVirtualFile()))
+            .setTooltipText("Navigate to extends")
+            .setCellRenderer(new MyFileReferencePsiElementListCellRenderer());
+
+        return builder.createLineMarkerInfo(twigFile);
+    }
+
+    @Nullable
+    private LineMarkerInfo<?> attachOverwrites(@NotNull TwigFile twigFile) {
         Collection<PsiFile> targets = new ArrayList<>();
 
         for (String templateName: TwigUtil.getTemplateNamesForFile(twigFile)) {
@@ -170,7 +226,7 @@ public class TwigLineMarkerProvider implements LineMarkerProvider {
         return getRelatedPopover("Overwrites", "Overwrite", twigFile, gotoRelatedItems, Symfony2Icons.TWIG_LINE_OVERWRITE);
     }
 
-    private LineMarkerInfo getRelatedPopover(String singleItemTitle, String singleItemTooltipPrefix, PsiElement lineMarkerTarget, List<GotoRelatedItem> gotoRelatedItems, Icon icon) {
+    private LineMarkerInfo<?> getRelatedPopover(String singleItemTitle, String singleItemTooltipPrefix, PsiElement lineMarkerTarget, List<GotoRelatedItem> gotoRelatedItems, Icon icon) {
 
         // single item has no popup
         String title = singleItemTitle;
@@ -193,7 +249,7 @@ public class TwigLineMarkerProvider implements LineMarkerProvider {
     }
 
     @Nullable
-    private LineMarkerInfo attachBlockImplements(@NotNull PsiElement psiElement, @NotNull FileImplementsLazyLoader implementsLazyLoader) {
+    private LineMarkerInfo<?> attachBlockImplements(@NotNull PsiElement psiElement, @NotNull FileImplementsLazyLoader implementsLazyLoader) {
         if(!TwigBlockUtil.hasBlockImplementations(psiElement, implementsLazyLoader)) {
             return null;
         }
@@ -240,7 +296,7 @@ public class TwigLineMarkerProvider implements LineMarkerProvider {
     }
 
     @Nullable
-    private LineMarkerInfo attachBlockOverwrites(@NotNull PsiElement psiElement, @NotNull FileOverwritesLazyLoader loader) {
+    private LineMarkerInfo<?> attachBlockOverwrites(@NotNull PsiElement psiElement, @NotNull FileOverwritesLazyLoader loader) {
         if(!TwigBlockUtil.hasBlockOverwrites(psiElement, loader)) {
             return null;
         }
@@ -254,8 +310,39 @@ public class TwigLineMarkerProvider implements LineMarkerProvider {
     }
 
     @Nullable
+    private LineMarkerInfo<?> attachFormType(@NotNull PsiElement psiElement) {
+        // form(theform);
+        PsiElement twigFunctionParameterIdentifierPsi = TwigUtil.getTwigFunctionParameterIdentifierPsi(psiElement);
+        if (twigFunctionParameterIdentifierPsi == null) {
+            return null;
+        }
+
+        Collection<TwigTypeContainer> twigTypeContainers = TwigTypeResolveUtil.resolveTwigMethodName(twigFunctionParameterIdentifierPsi, TwigTypeResolveUtil.formatPsiTypeNameWithCurrent(twigFunctionParameterIdentifierPsi));
+
+        Collection<PhpClass> phpClasses = new HashSet<>();
+
+        for (TwigTypeContainer twigTypeContainer : twigTypeContainers) {
+            Object dataHolder = twigTypeContainer.getDataHolder();
+            if (dataHolder instanceof FormDataHolder && PhpElementsUtil.isInstanceOf(((FormDataHolder) dataHolder).getFormType(), "\\Symfony\\Component\\Form\\FormTypeInterface")) {
+                phpClasses.add(((FormDataHolder) dataHolder).getFormType());
+            }
+        }
+
+        if (phpClasses.isEmpty()) {
+            return null;
+        }
+
+        NavigationGutterIconBuilder<PsiElement> builder = NavigationGutterIconBuilder.create(Symfony2Icons.FORM_TYPE_LINE_MARKER)
+            .setTargets(phpClasses)
+            .setTooltipText("Navigate to Form")
+            .setCellRenderer(new MyBlockListCellRenderer());
+
+        return builder.createLineMarkerInfo(psiElement.getFirstChild());
+    }
+
+    @Nullable
     @Override
-    public LineMarkerInfo getLineMarkerInfo(@NotNull PsiElement psiElement) {
+    public LineMarkerInfo<?> getLineMarkerInfo(@NotNull PsiElement psiElement) {
         return null;
     }
 
@@ -271,7 +358,7 @@ public class TwigLineMarkerProvider implements LineMarkerProvider {
         protected String getContainerText(PsiElement psiElement, String s) {
             // relative path else fallback to default name extraction
             PsiFile containingFile = psiElement.getContainingFile();
-            String relativePath = VfsUtil.getRelativePath(containingFile.getVirtualFile(), psiElement.getProject().getBaseDir(), '/');
+            String relativePath = VfsUtil.getRelativePath(containingFile.getVirtualFile(), ProjectUtil.getProjectDir(psiElement), '/');
             return relativePath != null ? relativePath : SymbolPresentationUtil.getSymbolContainerText(psiElement);
         }
 
@@ -372,6 +459,27 @@ public class TwigLineMarkerProvider implements LineMarkerProvider {
         @Override
         protected Icon getIcon(PsiElement psiElement) {
             return TwigIcons.TwigFileIcon;
+        }
+    }
+
+    /**
+     * Find "extends" which are targeting the given template file
+     */
+    private static class TemplateExtendsLazyTargets extends NotNullLazyValue<Collection<? extends PsiElement>> {
+        @NotNull
+        private final Project project;
+        @NotNull
+        private final VirtualFile virtualFile;
+
+        TemplateExtendsLazyTargets(@NotNull Project project, @NotNull VirtualFile virtualFile) {
+            this.project = project;
+            this.virtualFile = virtualFile;
+        }
+
+        @NotNull
+        @Override
+        protected Collection<? extends PsiElement> compute() {
+            return PsiElementUtils.convertVirtualFilesToPsiFiles(project, TwigUtil.getTemplatesExtendingFile(project, virtualFile));
         }
     }
 }

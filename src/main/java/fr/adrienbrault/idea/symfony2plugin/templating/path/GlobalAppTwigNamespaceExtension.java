@@ -6,6 +6,7 @@ import fr.adrienbrault.idea.symfony2plugin.extension.TwigNamespaceExtension;
 import fr.adrienbrault.idea.symfony2plugin.extension.TwigNamespaceExtensionParameter;
 import fr.adrienbrault.idea.symfony2plugin.templating.util.TwigUtil;
 import fr.adrienbrault.idea.symfony2plugin.util.FilesystemUtil;
+import fr.adrienbrault.idea.symfony2plugin.util.ProjectUtil;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -26,7 +27,7 @@ public class GlobalAppTwigNamespaceExtension implements TwigNamespaceExtension {
     @NotNull
     @Override
     public Collection<TwigPath> getNamespaces(@NotNull TwigNamespaceExtensionParameter parameter) {
-        VirtualFile baseDir = parameter.getProject().getBaseDir();
+        VirtualFile baseDir = ProjectUtil.getProjectDir(parameter.getProject());
 
         // "app" folder
         Collection<VirtualFile> directories = FilesystemUtil.getAppDirectories(parameter.getProject()).stream()
@@ -43,7 +44,10 @@ public class GlobalAppTwigNamespaceExtension implements TwigNamespaceExtension {
         Collection<TwigPath> paths = new ArrayList<>();
 
         directories.stream().map(VirtualFile::getPath).forEach(path -> {
-            paths.add(new TwigPath(path, TwigUtil.MAIN, TwigUtil.NamespaceType.BUNDLE));
+            if (TwigUtil.hasBundleNamespaceSupport(parameter.getProject())) {
+                paths.add(new TwigPath(path, TwigUtil.MAIN, TwigUtil.NamespaceType.BUNDLE));
+            }
+
             paths.add(new TwigPath(path, TwigUtil.MAIN, TwigUtil.NamespaceType.ADD_PATH));
         });
 

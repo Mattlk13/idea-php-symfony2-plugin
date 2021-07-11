@@ -33,6 +33,7 @@ import fr.adrienbrault.idea.symfony2plugin.templating.util.TwigTypeResolveUtil;
 import fr.adrienbrault.idea.symfony2plugin.templating.util.TwigUtil;
 import fr.adrienbrault.idea.symfony2plugin.templating.variable.TwigTypeContainer;
 import fr.adrienbrault.idea.symfony2plugin.templating.variable.dict.PsiVariable;
+import fr.adrienbrault.idea.symfony2plugin.templating.variable.resolver.holder.FormDataHolder;
 import fr.adrienbrault.idea.symfony2plugin.translation.dict.TranslationUtil;
 import fr.adrienbrault.idea.symfony2plugin.twig.utils.TwigFileUtil;
 import fr.adrienbrault.idea.symfony2plugin.twig.variable.collector.ControllerDocVariableCollector;
@@ -171,12 +172,27 @@ public class TwigTemplateCompletionContributor extends CompletionContributor {
             new FilterCompletionProvider()
         );
 
+        // {% apply upper %}This text becomes uppercase{% endapply %}
+        extend(
+            CompletionType.BASIC,
+            TwigPattern.getApplyFilterPattern(),
+            new CompletionProvider<CompletionParameters>() {
+                @Override
+                protected void addCompletions(@NotNull CompletionParameters completionParameters, @NotNull ProcessingContext processingContext, @NotNull CompletionResultSet completionResultSet) {
+                    Project project = completionParameters.getPosition().getProject();
+                    for(Map.Entry<String, TwigExtension> entry : TwigExtensionParser.getFilters(project).entrySet()) {
+                        completionResultSet.addElement(new TwigExtensionLookupElement(project, entry.getKey(), entry.getValue()));
+                    }
+                }
+            }
+        );
+
         // provides support for {{ '<xxx>' }}
         extend(
             CompletionType.BASIC,
             TwigPattern.getCompletablePattern(),
             new CompletionProvider<CompletionParameters>() {
-                public void addCompletions(@NotNull CompletionParameters parameters, ProcessingContext context, @NotNull CompletionResultSet resultSet) {
+                public void addCompletions(@NotNull CompletionParameters parameters, @NotNull ProcessingContext context, @NotNull CompletionResultSet resultSet) {
 
                     if(!Symfony2ProjectComponent.isEnabled(parameters.getPosition())) {
                         return;
@@ -184,7 +200,7 @@ public class TwigTemplateCompletionContributor extends CompletionContributor {
 
                     PsiElement psiElement = parameters.getPosition().getOriginalElement();
 
-                    for(Map.Entry<String, TwigExtension> entry : new TwigExtensionParser(parameters.getPosition().getProject()).getFunctions().entrySet()) {
+                    for(Map.Entry<String, TwigExtension> entry : TwigExtensionParser.getFunctions(parameters.getPosition().getProject()).entrySet()) {
                         resultSet.addElement(new TwigExtensionLookupElement(psiElement.getProject(), entry.getKey(), entry.getValue()));
                     }
 
@@ -403,7 +419,7 @@ public class TwigTemplateCompletionContributor extends CompletionContributor {
             if ((prevElement != null) && ((prevElement instanceof PsiWhiteSpace))) prevElement = prevElement.getPrevSibling();
 
             if ((prevElement != null) && (prevElement.getNode().getElementType() == TwigTokenTypes.FILTER)) {
-                for(Map.Entry<String, TwigExtension> entry : new TwigExtensionParser(parameters.getPosition().getProject()).getFilters().entrySet()) {
+                for(Map.Entry<String, TwigExtension> entry : TwigExtensionParser.getFilters(parameters.getPosition().getProject()).entrySet()) {
                     resultSet.addElement(new TwigExtensionLookupElement(currElement.getProject(), entry.getKey(), entry.getValue()));
                 }
             }
@@ -451,28 +467,28 @@ public class TwigTemplateCompletionContributor extends CompletionContributor {
     }
 
     private static class TwigSimpleTestParametersCompletionProvider extends CompletionProvider<CompletionParameters> {
-        public void addCompletions(@NotNull CompletionParameters parameters, ProcessingContext context, @NotNull CompletionResultSet resultSet) {
+        public void addCompletions(@NotNull CompletionParameters parameters, @NotNull ProcessingContext context, @NotNull CompletionResultSet resultSet) {
             PsiElement position = parameters.getPosition();
             if(!Symfony2ProjectComponent.isEnabled(position)) {
                 return;
             }
 
             Project project = position.getProject();
-            for (Map.Entry<String, TwigExtension> entry : new TwigExtensionParser(project).getSimpleTest().entrySet()) {
+            for (Map.Entry<String, TwigExtension> entry : TwigExtensionParser.getSimpleTest(project).entrySet()) {
                 resultSet.addElement(new TwigExtensionLookupElement(project, entry.getKey(), entry.getValue()));
             }
         }
     }
 
     private static class TwigOperatorCompletionProvider extends CompletionProvider<CompletionParameters> {
-        public void addCompletions(@NotNull CompletionParameters parameters, ProcessingContext context, @NotNull CompletionResultSet resultSet) {
+        public void addCompletions(@NotNull CompletionParameters parameters, @NotNull ProcessingContext context, @NotNull CompletionResultSet resultSet) {
             PsiElement position = parameters.getPosition();
             if(!Symfony2ProjectComponent.isEnabled(position)) {
                 return;
             }
 
             Project project = position.getProject();
-            for (Map.Entry<String, TwigExtension> entry : new TwigExtensionParser(project).getOperators().entrySet()) {
+            for (Map.Entry<String, TwigExtension> entry : TwigExtensionParser.getOperators(project).entrySet()) {
                 resultSet.addElement(new TwigExtensionLookupElement(project, entry.getKey(), entry.getValue()));
             }
         }
@@ -519,7 +535,18 @@ public class TwigTemplateCompletionContributor extends CompletionContributor {
                 }
 
                 if(twigTypeContainer.getStringElement() != null) {
-                    resultSet.addElement(LookupElementBuilder.create(twigTypeContainer.getStringElement()));
+                    LookupElementBuilder lookupElement = LookupElementBuilder.create(twigTypeContainer.getStringElement());
+
+                    // form
+                    Object dataHolder = twigTypeContainer.getDataHolder();
+                    if (dataHolder instanceof FormDataHolder) {
+                        lookupElement = lookupElement.withIcon(Symfony2Icons.FORM_TYPE);
+
+                        lookupElement = lookupElement.withTypeText(((FormDataHolder) dataHolder).getPhpClass().getName());
+                        lookupElement = lookupElement.withTailText("(" + ((FormDataHolder) dataHolder).getFormType().getName() + ")", true);
+                    }
+
+                    resultSet.addElement(lookupElement);
                 }
             }
         }

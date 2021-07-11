@@ -4,6 +4,11 @@ import org.apache.commons.lang.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
+
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
 
 /**
  * Create a service definition on a compiled debug xml file
@@ -21,6 +26,9 @@ public class XmlService implements ServiceInterface {
     private boolean isPublic = true;
 
     private String alias = null;
+
+    @NotNull
+    private Collection<String> tags = new HashSet<>();
 
     private XmlService(@NotNull String id) {
         this.id = id;
@@ -87,12 +95,49 @@ public class XmlService implements ServiceInterface {
         return null;
     }
 
+    @NotNull
+    @Override
+    public Collection<String> getResource() {
+        return Collections.emptyList();
+    }
+
+    @NotNull
+    @Override
+    public Collection<String> getExclude() {
+        return Collections.emptyList();
+    }
+
+    @NotNull
+    @Override
+    public Collection<String> getTags() {
+        return this.tags;
+    }
+
     @Nullable
     public static XmlService createFromXml(@NotNull Element node) {
         // empty id does not interest us
         String id = node.getAttribute("id");
         if(StringUtils.isBlank(id)) {
             return null;
+        }
+
+        // <service id="Psr\Log\LoggerInterface $securityLogger" alias="monolog.logger.security"/>
+        if (id.contains(" $") && id.matches("^.*\\s\\$.*$")) {
+            return null;
+        }
+
+        if (id.startsWith(".")) {
+            // <service id=".service_locator.XSes1R5" class="Symfony\Component\DependencyInjection\ServiceLocator" public="false">
+            // <service id=".service_locator.tHpW6v3" alias=".service_locator.Y7gDuDN" public="false"/>
+            if (id.startsWith(".service_locator.") || id.startsWith(".abstract.") || id.startsWith(".instanceof.") || id.startsWith(".debug.") || id.startsWith(".errored.")) {
+                return null;
+            }
+
+            // <service id=".1_ArrayCache~kSL.YwK" class="Doctrine\Common\Cache\ArrayCache" public="false"/>
+            // <service id=".2_~NpzP6Xn" public="false">
+            if (id.matches("^\\.[\\w-]+~.*$")) {
+                return null;
+            }
         }
 
         XmlService xmlService = new XmlService(id);
@@ -103,7 +148,7 @@ public class XmlService implements ServiceInterface {
         }
 
         String isPublic = node.getAttribute("public");
-        if(isPublic != null && "false".equalsIgnoreCase(isPublic)) {
+        if("false".equalsIgnoreCase(isPublic)) {
             xmlService.isPublic = false;
         }
 
@@ -111,6 +156,21 @@ public class XmlService implements ServiceInterface {
         if(StringUtils.isNotBlank(alias)) {
             xmlService.alias = alias;
         }
+
+        // <tag name="xml_type_tag"/>
+        Collection<String> myTags = new HashSet<>();
+        NodeList tags = node.getElementsByTagName("tag");
+        int numTags = tags.getLength();
+        for (int i = 0; i < numTags; i++) {
+            Element section = (Element) tags.item(i);
+
+            String name = section.getAttribute("name");
+            if (StringUtils.isNotBlank(name)) {
+                myTags.add(name);
+            }
+        }
+
+        xmlService.tags = myTags;
 
         return xmlService;
     }

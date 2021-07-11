@@ -1,7 +1,6 @@
 package fr.adrienbrault.idea.symfony2plugin.tests.templating.util;
 
 import com.intellij.openapi.util.Pair;
-import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiDirectory;
 import com.intellij.psi.PsiFile;
@@ -14,42 +13,12 @@ import fr.adrienbrault.idea.symfony2plugin.util.yaml.YamlPsiElementFactory;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.yaml.psi.YAMLFile;
 
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 /**
  * @author Daniel Espendiller <daniel@espendiller.net>
  */
 public class TwigUtilTempTest extends SymfonyTempCodeInsightFixtureTestCase {
-
-    /**
-     * @see fr.adrienbrault.idea.symfony2plugin.templating.util.TwigUtil#getTemplateNameByOverwrite
-     */
-    public void testTemplateOverwriteNameGeneration() {
-        createFiles(
-            "app/Resources/TwigUtilIntegrationBundle/views/layout.html.twig",
-            "app/Resources/TwigUtilIntegrationBundle/views/Foo/layout.html.twig",
-            "app/Resources/TwigUtilIntegrationBundle/views/Foo/Bar/layout.html.twig"
-        );
-
-        assertEquals(
-            "TwigUtilIntegrationBundle:layout.html.twig",
-            TwigUtil.getTemplateNameByOverwrite(getProject(), VfsUtil.findRelativeFile(getProject().getBaseDir(), "app/Resources/TwigUtilIntegrationBundle/views/layout.html.twig".split("/")))
-        );
-
-        assertEquals(
-            "TwigUtilIntegrationBundle:Foo/layout.html.twig",
-            TwigUtil.getTemplateNameByOverwrite(getProject(), VfsUtil.findRelativeFile(getProject().getBaseDir(), "app/Resources/TwigUtilIntegrationBundle/views/Foo/layout.html.twig".split("/")))
-        );
-
-        assertEquals(
-            "TwigUtilIntegrationBundle:Foo/Bar/layout.html.twig",
-            TwigUtil.getTemplateNameByOverwrite(getProject(), VfsUtil.findRelativeFile(getProject().getBaseDir(), "app/Resources/TwigUtilIntegrationBundle/views/Foo/Bar/layout.html.twig".split("/")))
-        );
-    }
-
     /**
      * @see fr.adrienbrault.idea.symfony2plugin.templating.util.TwigUtil#getPresentableTemplateName
      */
@@ -183,29 +152,41 @@ public class TwigUtilTempTest extends SymfonyTempCodeInsightFixtureTestCase {
      * @see TwigUtil#getTwigPathFromYamlConfigResolved
      */
     public void testGetTwigPathFromYamlConfigResolved() {
-        createFile("app/test/foo.yaml");
+        createFile("app/test/foo.html.twig");
+        createFile("app/template/foo.html.twig");
 
         PsiFile dummyFile = YamlPsiElementFactory.createDummyFile(getProject(), "" +
             "twig:\n" +
             "   paths:\n" +
             "       '%kernel.root_dir%/test': foo\n" +
             "       '%kernel.project_dir%/app/test': project\n" +
-            "       '%kernel.root_dir%/../app': app\n"
+            "       '%kernel.root_dir%/../app': app\n" +
+            "       'app/template': MY_PREFIX\n" +
+            "       'app///\\\\\\template': MY_PREFIX_1\n"
         );
 
         Collection<Pair<String, String>> paths = TwigUtil.getTwigPathFromYamlConfigResolved((YAMLFile) dummyFile);
 
         assertNotNull(
-            paths.stream().filter(pair -> "foo".equals(pair.getFirst()) && "app/test".equals(pair.getSecond())).findFirst()
+            paths.stream().filter(pair -> "foo".equals(pair.getFirst()) && "app/test".equals(pair.getSecond())).findFirst().get()
         );
 
         assertNotNull(
-            paths.stream().filter(pair -> "project".equals(pair.getFirst()) && "app/test".equals(pair.getSecond())).findFirst()
+            paths.stream().filter(pair -> "project".equals(pair.getFirst()) && "app/test".equals(pair.getSecond())).findFirst().get()
         );
 
         assertNotNull(
-            paths.stream().filter(pair -> "app".equals(pair.getFirst()) && "app".equals(pair.getSecond())).findFirst()
+            paths.stream().filter(pair -> "app".equals(pair.getFirst()) && "app".equals(pair.getSecond())).findFirst().get()
         );
+
+        assertNotNull(
+            paths.stream().filter(pair -> "MY_PREFIX".equals(pair.getFirst()) && "app/template".equals(pair.getSecond())).findFirst().get()
+        );
+
+        Pair<String, String> myPrefix1 = paths.stream().filter(pair -> "MY_PREFIX_1".equals(pair.getFirst())).findAny().get();
+
+        assertEquals("MY_PREFIX_1", myPrefix1.getFirst());
+        assertEquals("app/template", myPrefix1.getSecond());
     }
 
     private void assertIsDirectoryAtOffset(@NotNull String templateName, int offset, @NotNull String directory) {

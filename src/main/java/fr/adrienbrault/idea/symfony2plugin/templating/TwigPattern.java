@@ -9,17 +9,17 @@ import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiErrorElement;
 import com.intellij.psi.PsiWhiteSpace;
 import com.intellij.psi.tree.IElementType;
+import com.intellij.psi.tree.TokenSet;
 import com.intellij.util.ProcessingContext;
 import com.jetbrains.twig.TwigLanguage;
 import com.jetbrains.twig.TwigTokenTypes;
-import com.jetbrains.twig.elements.TwigBlockTag;
-import com.jetbrains.twig.elements.TwigCompositeElement;
-import com.jetbrains.twig.elements.TwigElementTypes;
+import com.jetbrains.twig.elements.*;
 import fr.adrienbrault.idea.symfony2plugin.templating.util.TwigTypeResolveUtil;
 import fr.adrienbrault.idea.symfony2plugin.templating.util.TwigUtil;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 
 /**
@@ -48,7 +48,7 @@ public class TwigPattern {
         PlatformPatterns.psiElement(TwigTokenTypes.SINGLE_QUOTE)
     );
 
-    public static final String DOC_SEE_REGEX  = "\\{#[\\s]+@see[\\s]+([-@\\./\\:\\w\\\\\\[\\]]+)[\\s]*#}";
+    public static final String DOC_SEE_REGEX  = "@see[\\s]+([-@\\./\\:\\w\\\\\\[\\]]+)[\\s]*";
 
     /**
      * {% trans with {'%name%': 'Fabien'} from "app" %}
@@ -158,20 +158,7 @@ public class TwigPattern {
         return PlatformPatterns
             .psiElement(TwigTokenTypes.STRING_TEXT)
             .withParent(
-                PlatformPatterns.or(
-
-                    // old and inconsistently implementations of FUNCTION_CALL:
-                    // eg {% if asset('') %} does not provide a FUNCTION_CALL whereas a print block does
-                    PlatformPatterns.psiElement(TwigElementTypes.PRINT_BLOCK),
-                    PlatformPatterns.psiElement(TwigElementTypes.TAG),
-                    PlatformPatterns.psiElement(TwigElementTypes.IF_TAG),
-                    PlatformPatterns.psiElement(TwigElementTypes.SET_TAG),
-                    PlatformPatterns.psiElement(TwigElementTypes.ELSE_TAG),
-                    PlatformPatterns.psiElement(TwigElementTypes.ELSEIF_TAG),
-
-                    // PhpStorm 2017.3.2: {{ asset('') }}
-                    PlatformPatterns.psiElement(TwigElementTypes.FUNCTION_CALL)
-                )
+                getFunctionCallScopePattern()
             )
             .afterLeafSkipping(
                 PlatformPatterns.or(
@@ -426,16 +413,18 @@ public class TwigPattern {
         //noinspection unchecked
         return PlatformPatterns
             .psiElement()
-            .afterLeafSkipping(
-                PlatformPatterns.or(
-                    PlatformPatterns.psiElement(PsiWhiteSpace.class),
-                    PlatformPatterns.psiElement(TwigTokenTypes.WHITE_SPACE)
-                ),
-                PlatformPatterns.psiElement(TwigTokenTypes.IDENTIFIER).afterLeafSkipping(PlatformPatterns.psiElement(PsiWhiteSpace.class), PlatformPatterns.or(
-                    PlatformPatterns.psiElement(TwigTokenTypes.IS),
-                    PlatformPatterns.psiElement(TwigTokenTypes.NOT)
+            .withParent(PlatformPatterns
+                .psiElement()
+                .afterLeafSkipping(
+                    PlatformPatterns.or(
+                        PlatformPatterns.psiElement(PsiWhiteSpace.class),
+                        PlatformPatterns.psiElement(TwigTokenTypes.WHITE_SPACE)
+                    ),
+                    PlatformPatterns.psiElement(TwigTokenTypes.IDENTIFIER).afterLeafSkipping(PlatformPatterns.psiElement(PsiWhiteSpace.class), PlatformPatterns.or(
+                        PlatformPatterns.psiElement(TwigTokenTypes.IS),
+                        PlatformPatterns.psiElement(TwigTokenTypes.NOT)
+                    ))
                 ))
-            )
             .withLanguage(TwigLanguage.INSTANCE);
     }
 
@@ -457,41 +446,10 @@ public class TwigPattern {
      * {% if 'foo.bar' <carpet> %}
      */
     public static ElementPattern<PsiElement> getAfterOperatorPattern() {
-        // @TODO: make it some nicer. can wrap it with whitespace
-
-        //noinspection unchecked
-        ElementPattern<PsiElement> or = PlatformPatterns.or(
-            PlatformPatterns.psiElement(PsiWhiteSpace.class),
-            PlatformPatterns.psiElement(TwigTokenTypes.WHITE_SPACE),
-            PlatformPatterns.psiElement(TwigTokenTypes.IDENTIFIER),
-            PlatformPatterns.psiElement(TwigTokenTypes.SINGLE_QUOTE),
-            PlatformPatterns.psiElement(TwigTokenTypes.STRING_TEXT),
-            PlatformPatterns.psiElement(TwigTokenTypes.DOT),
-            PlatformPatterns.psiElement(TwigTokenTypes.DOUBLE_QUOTE),
-            PlatformPatterns.psiElement(TwigTokenTypes.LBRACE),
-            PlatformPatterns.psiElement(TwigTokenTypes.RBRACE),
-            PlatformPatterns.psiElement(TwigTokenTypes.LBRACE_SQ),
-            PlatformPatterns.psiElement(TwigTokenTypes.RBRACE_SQ),
-            PlatformPatterns.psiElement(TwigTokenTypes.NUMBER),
-            PlatformPatterns.psiElement(TwigTokenTypes.FILTER)
-        );
-
-        //noinspection unchecked
-        ElementPattern<PsiElement> anIf = PlatformPatterns.or(
-            PlatformPatterns.psiElement(TwigTokenTypes.TAG_NAME).withText("if"),
-            PlatformPatterns.psiElement(TwigTokenTypes.AND),
-            PlatformPatterns.psiElement(TwigTokenTypes.OR)
-        );
-
         return PlatformPatterns
             .psiElement(TwigTokenTypes.IDENTIFIER)
-            .afterLeaf(PlatformPatterns.not(
-                PlatformPatterns.psiElement(TwigTokenTypes.DOT)
-            ))
-            .withParent(
-                PlatformPatterns.psiElement(TwigElementTypes.IF_TAG)
-            )
-            .afterLeafSkipping(or, anIf)
+            .inside(PlatformPatterns.psiElement(TwigElementTypes.IF_TAG))
+            .andNot(PlatformPatterns.psiElement().inside(PlatformPatterns.psiElement(TwigElementTypes.FIELD_REFERENCE)))
             .withLanguage(TwigLanguage.INSTANCE);
     }
 
@@ -534,7 +492,6 @@ public class TwigPattern {
     public static ElementPattern<PsiElement> getTagTokenBlockPattern() {
         return PlatformPatterns
             .psiElement(TwigTokenTypes.TAG_NAME)
-                .withParent(PlatformPatterns.psiElement(TwigElementTypes.TAG))
             .withLanguage(TwigLanguage.INSTANCE);
     }
 
@@ -567,13 +524,50 @@ public class TwigPattern {
         return getTagNameParameterPattern(TwigElementTypes.EMBED_TAG, "embed");
     }
 
-    public static ElementPattern<PsiElement> getPrintBlockFunctionPattern() {
-        return PlatformPatterns.psiElement().withParent(PlatformPatterns.or(
-            PlatformPatterns.psiElement(TwigElementTypes.PRINT_BLOCK),
+    static ElementPattern<PsiElement> getPrintBlockFunctionPattern() {
+      return PlatformPatterns.psiElement(TwigTokenTypes.IDENTIFIER)
+          .inside(PlatformPatterns.or(
+              PlatformPatterns.psiElement(TwigPsiReference.class),
+              PlatformPatterns.psiElement(TwigElementTypes.FUNCTION_CALL)))
+          .inside(getFunctionCallScopePattern())
+          .withLanguage(TwigLanguage.INSTANCE);
+    }
 
-            // PhpStorm 2017.3.2
+    public static ElementPattern<PsiElement> getFunctionPattern(@NotNull String ...functionName) {
+        return PlatformPatterns.psiElement(TwigElementTypes.FUNCTION_CALL).withText(PlatformPatterns.string().with(new PatternCondition<String>("Twig: Function call") {
+            @Override
+            public boolean accepts(@NotNull String function, ProcessingContext processingContext) {
+                String funcWithoutSpace = function.replaceAll(" +", "");
+
+                return Arrays.stream(functionName).anyMatch(wantFunction ->
+                    funcWithoutSpace.startsWith(wantFunction + "(") || funcWithoutSpace.equals(wantFunction)
+                );
+            }
+        }));
+    }
+
+    /**
+     * Provide a workaround for getting a FUNCTION scope as it not consistent in all Twig elements
+     *
+     * {% if asset('') %}
+     * {{ asset('') }}
+     */
+    @NotNull
+    private static ElementPattern<PsiElement> getFunctionCallScopePattern() {
+        return PlatformPatterns.or(
+            // old and inconsistently implementations of FUNCTION_CALL:
+            // eg {% if asset('') %} does not provide a FUNCTION_CALL whereas a print block does
+            PlatformPatterns.psiElement(TwigElementTypes.PRINT_BLOCK),
+            PlatformPatterns.psiElement(TwigElementTypes.TAG),
+            PlatformPatterns.psiElement(TwigElementTypes.IF_TAG),
+            PlatformPatterns.psiElement(TwigElementTypes.SET_TAG),
+            PlatformPatterns.psiElement(TwigElementTypes.ELSE_TAG),
+            PlatformPatterns.psiElement(TwigElementTypes.ELSEIF_TAG),
+            PlatformPatterns.psiElement(TwigElementTypes.FOR_TAG),
+
+            // PhpStorm 2017.3.2: {{ asset('') }}
             PlatformPatterns.psiElement(TwigElementTypes.FUNCTION_CALL)
-        )).withLanguage(TwigLanguage.INSTANCE);
+        );
     }
 
     /**
@@ -582,25 +576,16 @@ public class TwigPattern {
      */
     public static ElementPattern<PsiElement> getCompletablePattern() {
         //noinspection unchecked
-        return  PlatformPatterns.psiElement()
+        return  PlatformPatterns.psiElement(TwigTokenTypes.IDENTIFIER)
+            .inside(PlatformPatterns.psiElement(TwigElementTypes.VARIABLE_REFERENCE))
             .andNot(
+                PlatformPatterns.psiElement().inside(PlatformPatterns.psiElement(TwigElementTypes.FIELD_REFERENCE))
+            ).inside(
                 PlatformPatterns.or(
-                    PlatformPatterns.psiElement().afterLeaf(PlatformPatterns.psiElement(TwigTokenTypes.DOT)),
-                    PlatformPatterns.psiElement().afterLeaf(PlatformPatterns.psiElement(TwigTokenTypes.SINGLE_QUOTE)),
-                    PlatformPatterns.psiElement().afterLeaf(PlatformPatterns.psiElement(TwigTokenTypes.DOUBLE_QUOTE))
+                    PlatformPatterns.psiElement(TwigElementTypes.PRINT_BLOCK),
+                    PlatformPatterns.psiElement(TwigElementTypes.SET_TAG)
                 )
             )
-            .afterLeafSkipping(
-                PlatformPatterns.or(
-                    PlatformPatterns.psiElement(TwigTokenTypes.LBRACE),
-                    PlatformPatterns.psiElement(PsiWhiteSpace.class)
-                ),
-                PlatformPatterns.psiElement()
-            )
-            .withParent(PlatformPatterns.or(
-                PlatformPatterns.psiElement(TwigElementTypes.PRINT_BLOCK),
-                PlatformPatterns.psiElement(TwigElementTypes.SET_TAG)
-            ))
             .withLanguage(TwigLanguage.INSTANCE);
     }
 
@@ -854,9 +839,7 @@ public class TwigPattern {
     public static ElementPattern<PsiElement> getTypeCompletionPattern() {
         return PlatformPatterns
             .psiElement(TwigTokenTypes.IDENTIFIER)
-            .afterLeaf(
-                PlatformPatterns.psiElement(TwigTokenTypes.DOT)
-            )
+            .withParent(PlatformPatterns.psiElement(TwigElementTypes.FIELD_REFERENCE))
             .withLanguage(TwigLanguage.INSTANCE);
     }
 
@@ -864,7 +847,7 @@ public class TwigPattern {
         Collection<ElementPattern> patterns = new ArrayList<>();
 
         for (String s : TwigTypeResolveUtil.DOC_TYPE_PATTERN_SINGLE) {
-            patterns.add(PlatformPatterns.psiComment().withText(PlatformPatterns.string().matches(s)).withLanguage(TwigLanguage.INSTANCE));
+            patterns.add(PlatformPatterns.psiElement(TwigTokenTypes.COMMENT_TEXT).withText(PlatformPatterns.string().matches(s)).withLanguage(TwigLanguage.INSTANCE));
         }
 
         return PlatformPatterns.or(patterns.toArray(new ElementPattern[patterns.size()]));
@@ -876,10 +859,10 @@ public class TwigPattern {
      * {# \Class #}
      */
     @NotNull
-    public static ElementPattern<PsiComment> getTwigDocSeePattern() {
+    public static ElementPattern<PsiElement> getTwigDocSeePattern() {
         return PlatformPatterns.or(
-            PlatformPatterns.psiComment().withText(PlatformPatterns.string().matches(DOC_SEE_REGEX)).withLanguage(TwigLanguage.INSTANCE),
-            PlatformPatterns.psiComment().withText(PlatformPatterns.string().matches(TwigUtil.DOC_SEE_REGEX_WITHOUT_SEE)).withLanguage(TwigLanguage.INSTANCE)
+            PlatformPatterns.psiElement(TwigTokenTypes.COMMENT_TEXT).withText(PlatformPatterns.string().matches(DOC_SEE_REGEX)).withLanguage(TwigLanguage.INSTANCE),
+            PlatformPatterns.psiElement(TwigTokenTypes.COMMENT_TEXT).withText(PlatformPatterns.string().matches(TwigUtil.DOC_SEE_REGEX_WITHOUT_SEE)).withLanguage(TwigLanguage.INSTANCE)
         );
     }
 
@@ -1061,9 +1044,7 @@ public class TwigPattern {
         // {% for "user"  %}
 
         //noinspection unchecked
-        return PlatformPatterns
-            .psiElement(TwigTokenTypes.IDENTIFIER)
-            .beforeLeafSkipping(
+        return captureVariableOrField().beforeLeafSkipping(
                 PlatformPatterns.or(
                     PlatformPatterns.psiElement(PsiWhiteSpace.class),
                     PlatformPatterns.psiElement(TwigTokenTypes.WHITE_SPACE)
@@ -1089,6 +1070,32 @@ public class TwigPattern {
             .withLanguage(TwigLanguage.INSTANCE);
     }
 
+    /**
+     * {% apply <caret> %}foobar{% endapply %}
+     */
+    static ElementPattern<PsiElement> getApplyFilterPattern() {
+        return PlatformPatterns
+            .psiElement(TwigTokenTypes.IDENTIFIER)
+            .afterLeafSkipping(
+                PlatformPatterns.or(
+                    PlatformPatterns.psiElement(PsiWhiteSpace.class),
+                    PlatformPatterns.psiElement(TwigTokenTypes.WHITE_SPACE)
+                ),
+                PlatformPatterns.psiElement(TwigTokenTypes.TAG_NAME).with(new PatternCondition<PsiElement>("aa") {
+                    @Override
+                    public boolean accepts(@NotNull PsiElement psiElement, ProcessingContext processingContext) {
+                        return "apply".equalsIgnoreCase(psiElement.getText());
+                    }
+                })
+            )
+            .withLanguage(TwigLanguage.INSTANCE);
+    }
+
+  public static PsiElementPattern.Capture<PsiElement> captureVariableOrField() {
+    return PlatformPatterns.psiElement().withElementType(TokenSet.create(TwigElementTypes.VARIABLE_REFERENCE,
+        TwigElementTypes.FIELD_REFERENCE));
+  }
+
     public static ElementPattern<PsiElement> getForTagInVariablePattern() {
 
         // {% for key, user in "users" %}
@@ -1096,9 +1103,7 @@ public class TwigPattern {
         // {% for user in "users"|slice(0, 10) %}
 
         //noinspection unchecked
-        return PlatformPatterns
-            .psiElement(TwigTokenTypes.IDENTIFIER)
-            .afterLeafSkipping(
+        return captureVariableOrField().afterLeafSkipping(
                 PlatformPatterns.or(
                     PlatformPatterns.psiElement(PsiWhiteSpace.class),
                     PlatformPatterns.psiElement(TwigTokenTypes.WHITE_SPACE)
@@ -1113,9 +1118,7 @@ public class TwigPattern {
         // {% if "var" %}
 
         //noinspection unchecked
-        return PlatformPatterns
-            .psiElement(TwigTokenTypes.IDENTIFIER)
-            .afterLeafSkipping(
+        return captureVariableOrField().afterLeafSkipping(
                 PlatformPatterns.or(
                     PlatformPatterns.psiElement(PsiWhiteSpace.class),
                     PlatformPatterns.psiElement(TwigTokenTypes.WHITE_SPACE)
@@ -1137,9 +1140,7 @@ public class TwigPattern {
         // and so on
 
         //noinspection unchecked
-        return PlatformPatterns
-            .psiElement(TwigTokenTypes.IDENTIFIER)
-            .afterLeafSkipping(
+        return captureVariableOrField().afterLeafSkipping(
                 PlatformPatterns.or(
                     PlatformPatterns.psiElement(PsiWhiteSpace.class),
                     PlatformPatterns.psiElement(TwigTokenTypes.WHITE_SPACE)
@@ -1206,9 +1207,7 @@ public class TwigPattern {
         // {% set count1 = "var" %}
 
         //noinspection unchecked
-        return PlatformPatterns
-            .psiElement(TwigTokenTypes.IDENTIFIER)
-            .afterLeafSkipping(
+        return captureVariableOrField().afterLeafSkipping(
                 PlatformPatterns.or(
                     PlatformPatterns.psiElement(PsiWhiteSpace.class),
                     PlatformPatterns.psiElement(TwigTokenTypes.WHITE_SPACE)

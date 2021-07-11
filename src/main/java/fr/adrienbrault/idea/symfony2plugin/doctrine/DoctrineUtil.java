@@ -14,6 +14,7 @@ import com.jetbrains.php.lang.documentation.phpdoc.psi.tags.PhpDocTag;
 import com.jetbrains.php.lang.psi.PhpFile;
 import com.jetbrains.php.lang.psi.elements.PhpClass;
 import com.jetbrains.php.lang.psi.elements.PhpPsiElement;
+import de.espend.idea.php.annotation.util.AnnotationUtil;
 import fr.adrienbrault.idea.symfony2plugin.stubs.indexes.visitor.AnnotationElementWalkingVisitor;
 import fr.adrienbrault.idea.symfony2plugin.util.PsiElementUtils;
 import fr.adrienbrault.idea.symfony2plugin.util.yaml.YamlHelper;
@@ -26,8 +27,6 @@ import org.jetbrains.yaml.psi.*;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * @author Daniel Espendiller <daniel@espendiller.net>
@@ -55,7 +54,7 @@ public class DoctrineUtil {
         } else if(psiFile instanceof YAMLFile) {
             pairs = getClassRepositoryPair((YAMLFile) psiFile);
         } else if(psiFile instanceof PhpFile) {
-            pairs = getClassRepositoryPair((PhpFile) psiFile);
+            pairs = getClassRepositoryPair((PsiElement) psiFile);
         }
 
         return pairs;
@@ -110,9 +109,8 @@ public class DoctrineUtil {
      * Extract class and repository from all php annotations
      * We support multiple use case like orm an so on
      */
-    @Nullable
-    private static Collection<Pair<String, String>> getClassRepositoryPair(@NotNull PhpFile phpFile) {
-
+    @NotNull
+    public static Collection<Pair<String, String>> getClassRepositoryPair(@NotNull PsiElement phpFile) {
         final Collection<Pair<String, String>> pairs = new ArrayList<>();
 
         phpFile.acceptChildren(new AnnotationElementWalkingVisitor(phpDocTag -> {
@@ -143,35 +141,28 @@ public class DoctrineUtil {
      * Extract text: @Entity(repositoryClass="foo")
      */
     @Nullable
-    private static String getAnnotationRepositoryClass(@NotNull PhpDocTag phpDocTag, @NotNull PhpClass phpClass) {
+    public static String getAnnotationRepositoryClass(@NotNull PhpDocTag phpDocTag, @NotNull PhpClass phpClass) {
         PsiElement phpDocAttributeList = PsiElementUtils.getChildrenOfType(phpDocTag, PlatformPatterns.psiElement(PhpDocElementTypes.phpDocAttributeList));
         if(phpDocAttributeList == null) {
             return null;
         }
 
+        // @TODO: use annotation plugin
         // repositoryClass="Foobar"
         String text = phpDocAttributeList.getText();
-        Matcher matcher = Pattern.compile("repositoryClass\\s*=\\s*\"([^\"]*)\"").matcher(text);
-        if (matcher.find()) {
-            String value = matcher.group(1);
-            if(StringUtils.isBlank(value)) {
-                return null;
-            }
 
-            return value;
+        String repositoryClass = EntityHelper.resolveDoctrineLikePropertyClass(
+            phpClass,
+            text,
+            "repositoryClass",
+            aVoid -> AnnotationUtil.getUseImportMap(phpDocTag)
+        );
+
+        if (repositoryClass == null) {
+            return null;
         }
 
-        // repositoryClass=Foobar::class
-        // @TODO: use annotation plugin
-        matcher = Pattern.compile("repositoryClass\\s*=\\s*([^\\s:]*)::class").matcher(text);
-        if (matcher.find()) {
-            PhpClass classConstant = EntityHelper.getAnnotationRepositoryClass(phpClass, matcher.group(1));
-            if(classConstant != null) {
-                return StringUtils.stripStart(classConstant.getFQN(), "\\");
-            }
-        }
-
-        return null;
+        return StringUtils.stripStart(repositoryClass, "\\");
     }
 
     /**

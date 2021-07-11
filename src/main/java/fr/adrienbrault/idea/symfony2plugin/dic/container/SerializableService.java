@@ -5,6 +5,8 @@ import org.apache.commons.lang.builder.HashCodeBuilder;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.Objects;
 
 /**
@@ -53,6 +55,18 @@ public class SerializableService implements ServiceSerializable {
 
     @Nullable
     private String parent;
+
+    @NotNull
+    @SerializedName("resource")
+    private Collection<String> resource = new HashSet<>();
+
+    @NotNull
+    @SerializedName("exclude")
+    private Collection<String> exclude = new HashSet<>();
+
+    @NotNull
+    @SerializedName("tags")
+    private Collection<String> tags = new HashSet<>();
 
     public SerializableService(@NotNull String id) {
         this.id = id;
@@ -169,6 +183,39 @@ public class SerializableService implements ServiceSerializable {
         return this;
     }
 
+    @NotNull
+    @Override
+    public Collection<String> getResource() {
+        return this.resource;
+    }
+
+    @NotNull
+    @Override
+    public Collection<String> getExclude() {
+        return this.exclude;
+    }
+
+    @NotNull
+    @Override
+    public Collection<String> getTags() {
+        return tags;
+    }
+
+    public SerializableService setTags(@NotNull Collection<String> tags) {
+        this.tags = tags;
+        return this;
+    }
+
+    public SerializableService setResource(@NotNull Collection<String> resource) {
+        this.resource = resource;
+        return this;
+    }
+
+    public SerializableService setExclude(@NotNull Collection<String> exclude) {
+        this.exclude = exclude;
+        return this;
+    }
+
     @Override
     public int hashCode() {
         return new HashCodeBuilder()
@@ -184,6 +231,9 @@ public class SerializableService implements ServiceSerializable {
             .append(this.decorates)
             .append(this.decorationInnerName)
             .append(this.parent)
+            .append(new HashSet<>(this.resource))
+            .append(new HashSet<>(this.exclude))
+            .append(new HashSet<>(this.tags))
             .toHashCode()
         ;
     }
@@ -194,7 +244,6 @@ public class SerializableService implements ServiceSerializable {
             Objects.equals(((SerializableService) obj).id, this.id) &&
             Objects.equals(((SerializableService) obj).className, this.className) &&
             Objects.equals(((SerializableService) obj).isPublic, this.isPublic) &&
-            Objects.equals(((SerializableService) obj).isDeprecated, this.isDeprecated) &&
             Objects.equals(((SerializableService) obj).isLazy, this.isLazy) &&
             Objects.equals(((SerializableService) obj).isAbstract, this.isAbstract) &&
             Objects.equals(((SerializableService) obj).isAutowire, this.isAutowire) &&
@@ -202,7 +251,10 @@ public class SerializableService implements ServiceSerializable {
             Objects.equals(((SerializableService) obj).alias, this.alias) &&
             Objects.equals(((SerializableService) obj).decorates, this.decorates) &&
             Objects.equals(((SerializableService) obj).decorationInnerName, this.decorationInnerName) &&
-            Objects.equals(((SerializableService) obj).parent, this.parent)
+            Objects.equals(((SerializableService) obj).parent, this.parent) &&
+            Objects.equals(new HashSet<>(((SerializableService) obj).resource), new HashSet<>(this.resource)) &&
+            Objects.equals(new HashSet<>(((SerializableService) obj).exclude), new HashSet<>(this.exclude)) &&
+            Objects.equals(new HashSet<>(((SerializableService) obj).tags), new HashSet<>(this.tags))
         ;
     }
 }

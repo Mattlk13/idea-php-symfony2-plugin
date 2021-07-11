@@ -12,12 +12,14 @@ import com.intellij.openapi.wm.StatusBar;
 import com.intellij.openapi.wm.WindowManager;
 import com.intellij.psi.PsiElement;
 import fr.adrienbrault.idea.symfony2plugin.dic.ContainerFile;
+import fr.adrienbrault.idea.symfony2plugin.dic.container.util.ServiceContainerUtil;
 import fr.adrienbrault.idea.symfony2plugin.extension.PluginConfigurationExtension;
 import fr.adrienbrault.idea.symfony2plugin.extension.ServiceContainerLoader;
 import fr.adrienbrault.idea.symfony2plugin.extension.ServiceContainerLoaderParameter;
 import fr.adrienbrault.idea.symfony2plugin.profiler.widget.SymfonyProfilerWidget;
 import fr.adrienbrault.idea.symfony2plugin.routing.RouteHelper;
 import fr.adrienbrault.idea.symfony2plugin.util.IdeHelper;
+import fr.adrienbrault.idea.symfony2plugin.util.ProjectUtil;
 import fr.adrienbrault.idea.symfony2plugin.util.service.ServiceXmlParserFactory;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -110,7 +112,7 @@ public class Symfony2ProjectComponent implements ProjectComponent {
         }
 
         if(containerFiles.size() == 0) {
-            for (String s : Settings.DEFAULT_CONTAINER_PATHS) {
+            for (String s : ServiceContainerUtil.getContainerFiles(project)) {
                 containerFiles.add(new ContainerFile(s));
             }
         }
@@ -128,7 +130,7 @@ public class Symfony2ProjectComponent implements ProjectComponent {
     private void checkProject() {
         if(!this.isEnabled()
             && !Settings.getInstance(project).dismissEnableNotification
-            && VfsUtil.findRelativeFile(this.project.getBaseDir(), "vendor", "symfony") != null
+            && VfsUtil.findRelativeFile(ProjectUtil.getProjectDir(this.project), "vendor", "symfony") != null
             ) {
 
             IdeHelper.notifyEnableMessage(project);
@@ -154,12 +156,12 @@ public class Symfony2ProjectComponent implements ProjectComponent {
             return true;
         }
 
-        if(VfsUtil.findRelativeFile(project.getBaseDir(), "vendor", "symfony") != null) {
+        if(VfsUtil.findRelativeFile(ProjectUtil.getProjectDir(project), "vendor", "symfony") != null) {
             return true;
         }
 
         // drupal8; this should not really here
-        if(VfsUtil.findRelativeFile(project.getBaseDir(), "core", "vendor", "symfony") != null) {
+        if(VfsUtil.findRelativeFile(ProjectUtil.getProjectDir(project), "core", "vendor", "symfony") != null) {
             return true;
         }
 

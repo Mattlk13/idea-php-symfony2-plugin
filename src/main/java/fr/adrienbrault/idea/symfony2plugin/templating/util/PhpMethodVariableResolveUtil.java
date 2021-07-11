@@ -1,8 +1,10 @@
 package fr.adrienbrault.idea.symfony2plugin.templating.util;
 
+import com.intellij.openapi.util.Pair;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiRecursiveElementWalkingVisitor;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.jetbrains.php.lang.documentation.phpdoc.psi.PhpDocComment;
 import com.jetbrains.php.lang.documentation.phpdoc.psi.tags.PhpDocTag;
 import com.jetbrains.php.lang.parser.PhpElementTypes;
 import com.jetbrains.php.lang.psi.elements.*;
@@ -170,11 +172,15 @@ public class PhpMethodVariableResolveUtil {
             PsiElement parent = scopeVar.getParent();
             if (parent instanceof ArrayAccessExpression) {
                 // $template['variable'] = $foo
-                collectedTypes.putAll(getTypesOnArrayIndex((ArrayAccessExpression) parent));
+                Pair<String, PsiVariable> pair = getTypesOnArrayIndex((ArrayAccessExpression) parent);
+                if (pair != null) {
+                    collectedTypes.put(pair.getFirst(), pair.getSecond());
+                }
             } else if (parent instanceof AssignmentExpression) {
                 // array('foo' => $var)
-                if (((AssignmentExpression) parent).getValue() instanceof ArrayCreationExpression) {
-                    collectedTypes.putAll(getTypesOnArrayHash((ArrayCreationExpression) ((AssignmentExpression) parent).getValue()));
+                PhpPsiElement value = ((AssignmentExpression) parent).getValue();
+                if (value instanceof ArrayCreationExpression) {
+                    collectedTypes.putAll(getTypesOnArrayHash((ArrayCreationExpression) value));
                 }
             }
         }
@@ -185,10 +191,8 @@ public class PhpMethodVariableResolveUtil {
     /**
      * $template['var'] = $foo
      */
-    private static Map<String, PsiVariable> getTypesOnArrayIndex(ArrayAccessExpression arrayAccessExpression) {
-
-        Map<String, PsiVariable> collectedTypes = new HashMap<>();
-
+    @Nullable
+    private static Pair<String, PsiVariable> getTypesOnArrayIndex(@NotNull ArrayAccessExpression arrayAccessExpression) {
         ArrayIndex arrayIndex = arrayAccessExpression.getIndex();
         if(arrayIndex != null && arrayIndex.getValue() instanceof StringLiteralExpression) {
 
@@ -202,28 +206,23 @@ public class PhpMethodVariableResolveUtil {
                     variableTypes.addAll(((PhpTypedElement) arrayValue).getType().getTypes());
                 }
 
-                collectedTypes.put(variableName, new PsiVariable(variableTypes, ((AssignmentExpression) parent).getValue()));
-
+                return Pair.create(variableName, new PsiVariable(variableTypes, ((AssignmentExpression) parent).getValue()));
             } else {
-                collectedTypes.put(variableName, new PsiVariable(variableTypes, null));
+                return Pair.create(variableName, new PsiVariable(variableTypes));
             }
-
-
         }
 
-        return collectedTypes;
+        return null;
     }
 
     /**
      *  array('foo' => $var, 'bar' => $bar)
      */
-    public static Map<String, PsiVariable> getTypesOnArrayHash(ArrayCreationExpression arrayCreationExpression) {
-
+    public static Map<String, PsiVariable> getTypesOnArrayHash(@NotNull ArrayCreationExpression arrayCreationExpression) {
         Map<String, PsiVariable> collectedTypes = new HashMap<>();
 
         for(ArrayHashElement arrayHashElement: arrayCreationExpression.getHashElements()) {
             if(arrayHashElement.getKey() instanceof StringLiteralExpression) {
-
                 String variableName = ((StringLiteralExpression) arrayHashElement.getKey()).getContents();
                 Set<String> variableTypes = new HashSet<>();
 
@@ -232,194 +231,213 @@ public class PhpMethodVariableResolveUtil {
                 }
 
                 collectedTypes.put(variableName, new PsiVariable(variableTypes, arrayHashElement.getValue()));
-
             }
         }
 
         return collectedTypes;
     }
 
-    public static void visitRenderTemplateFunctions(@NotNull PsiElement context, @NotNull Consumer<Triple<String, PhpNamedElement, FunctionReference>> consumer) {
-        context.accept(new PsiRecursiveElementWalkingVisitor() {
-            private Set<String> methods = null;
+    /**
+     * Visit method scope for template renders, also via annotation of the method itself
+     *
+     * As annotations are not in scope of the method itself
+     */
+    public static void visitRenderTemplateFunctions(@NotNull Method method, @NotNull Consumer<Triple<String, PhpNamedElement, FunctionReference>> consumer) {
+        TemplateRenderPsiRecursiveElementWalkingVisitor psiElementVisitor = new TemplateRenderPsiRecursiveElementWalkingVisitor(method, consumer);
 
-            @Override
-            public void visitElement(PsiElement element) {
-                if(element instanceof MethodReference) {
-                    visitMethodReference((MethodReference) element);
-                } else if(element instanceof PhpDocTag) {
-                    visitPhpDocTag((PhpDocTag) element);
+        PhpDocComment docComment = method.getDocComment();
+        for (PhpDocTag phpDocTag : PsiTreeUtil.getChildrenOfTypeAsList(docComment, PhpDocTag.class)) {
+            psiElementVisitor.visitPhpDocTag(phpDocTag);
+        }
+
+        method.accept(psiElementVisitor);
+    }
+
+    /**
+     * Visit all possible elements for render clements, scope shop be the class or a file itself
+     */
+    public static void visitRenderTemplateFunctions(@NotNull PsiElement context, @NotNull Consumer<Triple<String, PhpNamedElement, FunctionReference>> consumer) {
+        context.accept(new TemplateRenderPsiRecursiveElementWalkingVisitor(context, consumer));
+    }
+
+    private static class TemplateRenderPsiRecursiveElementWalkingVisitor extends PsiRecursiveElementWalkingVisitor {
+        private final PsiElement context;
+        private final Consumer<Triple<String, PhpNamedElement, FunctionReference>> consumer;
+        private Set<String> methods;
+
+        TemplateRenderPsiRecursiveElementWalkingVisitor(PsiElement context, Consumer<Triple<String, PhpNamedElement, FunctionReference>> consumer) {
+            this.context = context;
+            this.consumer = consumer;
+            methods = null;
+        }
+
+        @Override
+        public void visitElement(PsiElement element) {
+            if(element instanceof MethodReference) {
+                visitMethodReference((MethodReference) element);
+            } else if(element instanceof PhpDocTag) {
+                visitPhpDocTag((PhpDocTag) element);
+            }
+            super.visitElement(element);
+        }
+
+        private void visitMethodReference(@NotNull MethodReference methodReference) {
+            String methodName = methodReference.getName();
+
+            // init methods once per file
+            if(methods == null) {
+                methods = new HashSet<>();
+                methods.addAll(RENDER_METHODS);
+
+                PluginConfigurationExtension[] extensions = Symfony2ProjectComponent.PLUGIN_CONFIGURATION_EXTENSION.getExtensions();
+                if(extensions.length > 0) {
+                    PluginConfigurationExtensionParameter pluginConfiguration = new PluginConfigurationExtensionParameter(context.getProject());
+                    for (PluginConfigurationExtension extension : extensions) {
+                        extension.invokePluginConfiguration(pluginConfiguration);
+                    }
+
+                    methods.addAll(pluginConfiguration.getTemplateUsageMethod());
                 }
-                super.visitElement(element);
             }
 
-            private void visitMethodReference(@NotNull MethodReference methodReference) {
-                String methodName = methodReference.getName();
+            if(!methods.contains(methodName)) {
+                return;
+            }
 
-                // init methods once per file
-                if(methods == null) {
-                    methods = new HashSet<>();
-                    methods.addAll(RENDER_METHODS);
+            PsiElement[] parameters = methodReference.getParameters();
+            if(parameters.length == 0) {
+                return;
+            }
 
-                    PluginConfigurationExtension[] extensions = Symfony2ProjectComponent.PLUGIN_CONFIGURATION_EXTENSION.getExtensions();
-                    if(extensions.length > 0) {
-                        PluginConfigurationExtensionParameter pluginConfiguration = new PluginConfigurationExtensionParameter(context.getProject());
-                        for (PluginConfigurationExtension extension : extensions) {
-                            extension.invokePluginConfiguration(pluginConfiguration);
-                        }
-
-                        methods.addAll(pluginConfiguration.getTemplateUsageMethod());
+            if (parameters[0] instanceof StringLiteralExpression) {
+                addStringLiteralScope(methodReference, (StringLiteralExpression) parameters[0]);
+            } else if(parameters[0] instanceof TernaryExpression) {
+                // render(true === true ? 'foo.twig.html' : 'foobar.twig.html')
+                for (PhpPsiElement phpPsiElement : new PhpPsiElement[]{((TernaryExpression) parameters[0]).getTrueVariant(), ((TernaryExpression) parameters[0]).getFalseVariant()}) {
+                    if (phpPsiElement == null) {
+                        continue;
                     }
-                }
-
-                if(!methods.contains(methodName)) {
-                    return;
-                }
-
-                PsiElement[] parameters = methodReference.getParameters();
-                if(parameters.length == 0) {
-                    return;
-                }
-
-                if (parameters[0] instanceof StringLiteralExpression) {
-                    resolveString(methodReference, parameters[0]);
-                } else if(parameters[0] instanceof TernaryExpression) {
-                    // render(true === true ? 'foo.twig.html' : 'foobar.twig.html')
-                    for (PhpPsiElement phpPsiElement : new PhpPsiElement[]{((TernaryExpression) parameters[0]).getTrueVariant(), ((TernaryExpression) parameters[0]).getFalseVariant()}) {
-                        if (phpPsiElement == null) {
-                            continue;
-                        }
-
-                        if (phpPsiElement instanceof StringLiteralExpression) {
-                            resolveString(methodReference, phpPsiElement);
-                        } else if(phpPsiElement instanceof PhpReference) {
-                            resolvePhpReference(methodReference, phpPsiElement);
-                        }
-                    }
-                } else if(parameters[0] instanceof PhpReference) {
-                    resolvePhpReference(methodReference, parameters[0]);
-                } else if(parameters[0] instanceof BinaryExpression) {
-                    // render($foo ?? 'foo.twig.html')
-                    PsiElement phpPsiElement = ((BinaryExpression) parameters[0]).getRightOperand();
 
                     if (phpPsiElement instanceof StringLiteralExpression) {
-                        resolveString(methodReference, phpPsiElement);
+                        addStringLiteralScope(methodReference, (StringLiteralExpression) phpPsiElement);
                     } else if(phpPsiElement instanceof PhpReference) {
                         resolvePhpReference(methodReference, phpPsiElement);
                     }
                 }
-            }
+            } else if(parameters[0] instanceof AssignmentExpression) {
+                // $this->render($template = 'foo.html.twig')
+                PhpPsiElement value = ((AssignmentExpression) parameters[0]).getValue();
+                if(value instanceof StringLiteralExpression) {
+                    addStringLiteralScope(methodReference, (StringLiteralExpression) value);
+                }
+            } else if(parameters[0] instanceof PhpReference) {
+                resolvePhpReference(methodReference, parameters[0]);
+            } else if(parameters[0] instanceof BinaryExpression) {
+                // render($foo ?? 'foo.twig.html')
+                PsiElement phpPsiElement = ((BinaryExpression) parameters[0]).getRightOperand();
 
-            private void resolveString(@NotNull MethodReference methodReference, PsiElement parameter) {
-                // foo('foo.html.twig')
-                String contents = ((StringLiteralExpression) parameter).getContents();
-                if (StringUtils.isBlank(contents) || !contents.endsWith(".twig")) {
-                    return;
+                if (phpPsiElement instanceof StringLiteralExpression) {
+                    addStringLiteralScope(methodReference, (StringLiteralExpression) phpPsiElement);
+                } else if(phpPsiElement instanceof PhpReference) {
+                    resolvePhpReference(methodReference, phpPsiElement);
+                }
+            }
+        }
+
+        private void resolvePhpReference(@NotNull MethodReference methodReference, PsiElement parameter) {
+            for (PhpNamedElement phpNamedElement : ((PhpReference) parameter).resolveLocal()) {
+                // foo(self::foo)
+                // foo($this->foo)
+                if (phpNamedElement instanceof Field) {
+                    PsiElement defaultValue = ((Field) phpNamedElement).getDefaultValue();
+                    if (defaultValue instanceof StringLiteralExpression) {
+                        addStringLiteralScope(methodReference, (StringLiteralExpression) defaultValue);
+                    }
                 }
 
-                Function parentOfType = PsiTreeUtil.getParentOfType(methodReference, Function.class);
-                if(parentOfType == null) {
-                    return;
-                }
-
-                addTemplateWithScope(contents, parentOfType, methodReference);
-            }
-
-            private void resolvePhpReference(@NotNull MethodReference methodReference, PsiElement parameter) {
-                for (PhpNamedElement phpNamedElement : ((PhpReference) parameter).resolveLocal()) {
-                    // foo(self::foo)
-                    // foo($this->foo)
-                    if (phpNamedElement instanceof Field) {
-                        PsiElement defaultValue = ((Field) phpNamedElement).getDefaultValue();
-                        if (defaultValue instanceof StringLiteralExpression) {
-                            addStringLiteralScope(methodReference, (StringLiteralExpression) defaultValue);
+                // foo($var) => $var = 'test.html.twig'
+                if (phpNamedElement instanceof Variable) {
+                    PsiElement assignmentExpression = phpNamedElement.getParent();
+                    if (assignmentExpression instanceof AssignmentExpression) {
+                        PhpPsiElement value = ((AssignmentExpression) assignmentExpression).getValue();
+                        if (value instanceof StringLiteralExpression) {
+                            addStringLiteralScope(methodReference, (StringLiteralExpression) value);
                         }
                     }
+                }
+            }
+        }
 
-                    // foo($var) => $var = 'test.html.twig'
-                    if (phpNamedElement instanceof Variable) {
-                        PsiElement assignmentExpression = phpNamedElement.getParent();
-                        if (assignmentExpression instanceof AssignmentExpression) {
-                            PhpPsiElement value = ((AssignmentExpression) assignmentExpression).getValue();
-                            if (value instanceof StringLiteralExpression) {
-                                addStringLiteralScope(methodReference, (StringLiteralExpression) value);
+        private void addStringLiteralScope(@NotNull MethodReference methodReference, @NotNull StringLiteralExpression defaultValue) {
+            String contents = defaultValue.getContents();
+            if (StringUtils.isBlank(contents) || !contents.endsWith(".twig")) {
+                return;
+            }
+
+            Function parentOfType = PsiTreeUtil.getParentOfType(methodReference, Function.class);
+            if (parentOfType == null) {
+                return;
+            }
+
+            addTemplateWithScope(contents, parentOfType, methodReference);
+        }
+
+        /**
+         * "@Template("foobar.html.twig")"
+         * "@Template(template="foobar.html.twig")"
+         */
+        private void visitPhpDocTag(@NotNull PhpDocTag phpDocTag) {
+            // "@var" and user non related tags dont need an action
+            if(AnnotationBackportUtil.NON_ANNOTATION_TAGS.contains(phpDocTag.getName())) {
+                return;
+            }
+
+            // init scope imports
+            Map<String, String> fileImports = AnnotationBackportUtil.getUseImportMap(phpDocTag);
+            if(fileImports.size() == 0) {
+                return;
+            }
+
+            String annotationFqnName = AnnotationBackportUtil.getClassNameReference(phpDocTag, fileImports);
+            if(!StringUtils.stripStart(TwigUtil.TEMPLATE_ANNOTATION_CLASS, "\\").equals(StringUtils.stripStart(annotationFqnName, "\\"))) {
+                return;
+            }
+
+            String template = AnnotationUtil.getPropertyValueOrDefault(phpDocTag, "template");
+            if (template == null) {
+                // see \Sensio\Bundle\FrameworkExtraBundle\Templating\TemplateGuesser
+                // App\Controller\MyNiceController::myAction => my_nice/my.html.twig
+                Method methodScope = AnnotationBackportUtil.getMethodScope(phpDocTag);
+                if(methodScope != null) {
+                    PhpClass phpClass = methodScope.getContainingClass();
+                    if (phpClass != null) {
+                        // App\Controller\  "MyNice"  Controller
+                        Matcher matcher = Pattern.compile("Controller\\\\(.+)Controller$", Pattern.MULTILINE).matcher(StringUtils.stripStart(phpClass.getFQN(), "\\"));
+                        if(matcher.find()){
+                            String group = underscore(matcher.group(1).replace("\\", "/"));
+                            String name = methodScope.getName();
+
+                            // __invoke is using controller as template name
+                            if (name.equals("__invoke")) {
+                                addTemplateWithScope(group + ".html.twig", methodScope, null);
+                            } else {
+                                String action = name.endsWith("Action") ? name.substring(0, name.length() - "Action".length()) : name;
+                                addTemplateWithScope(group + "/" + underscore(action) + ".html.twig", methodScope, null);
                             }
                         }
                     }
                 }
-            }
-
-            private void addStringLiteralScope(@NotNull MethodReference methodReference, @NotNull StringLiteralExpression defaultValue) {
-                String contents = defaultValue.getContents();
-                if (StringUtils.isBlank(contents) || !contents.endsWith(".twig")) {
-                    return;
-                }
-
-                Function parentOfType = PsiTreeUtil.getParentOfType(methodReference, Function.class);
-                if (parentOfType == null) {
-                    return;
-                }
-
-                addTemplateWithScope(contents, parentOfType, methodReference);
-            }
-
-            /**
-             * "@Template("foobar.html.twig")"
-             * "@Template(template="foobar.html.twig")"
-             */
-            private void visitPhpDocTag(@NotNull PhpDocTag phpDocTag) {
-                // "@var" and user non related tags dont need an action
-                if(AnnotationBackportUtil.NON_ANNOTATION_TAGS.contains(phpDocTag.getName())) {
-                    return;
-                }
-
-                // init scope imports
-                Map<String, String> fileImports = AnnotationBackportUtil.getUseImportMap(phpDocTag);
-                if(fileImports.size() == 0) {
-                    return;
-                }
-
-                String annotationFqnName = AnnotationBackportUtil.getClassNameReference(phpDocTag, fileImports);
-                if(!StringUtils.stripStart(TwigUtil.TEMPLATE_ANNOTATION_CLASS, "\\").equals(StringUtils.stripStart(annotationFqnName, "\\"))) {
-                    return;
-                }
-
-                String template = AnnotationUtil.getPropertyValueOrDefault(phpDocTag, "template");
-                if (template == null) {
-                    // see \Sensio\Bundle\FrameworkExtraBundle\Templating\TemplateGuesser
-                    // App\Controller\MyNiceController::myAction => my_nice/my.html.twig
-                    Method methodScope = AnnotationBackportUtil.getMethodScope(phpDocTag);
-                    if(methodScope != null) {
-                        PhpClass phpClass = methodScope.getContainingClass();
-                        if (phpClass != null) {
-                            // App\Controller\  "MyNice"  Controller
-                            Matcher matcher = Pattern.compile("Controller\\\\(.+)Controller$", Pattern.MULTILINE).matcher(StringUtils.stripStart(phpClass.getFQN(), "\\"));
-                            if(matcher.find()){
-                                String group = underscore(matcher.group(1).replace("\\", "/"));
-                                String name = methodScope.getName();
-
-                                // __invoke is using controller as template name
-                                if (name.equals("__invoke")) {
-                                    addTemplateWithScope(group + ".html.twig", methodScope, null);
-                                } else {
-                                    String action = name.endsWith("Action") ? name.substring(0, name.length() - "Action".length()) : name;
-                                    addTemplateWithScope(group + "/" + underscore(action) + ".html.twig", methodScope, null);
-                                }
-                            }
-                        }
-                    }
-                } else if(template.endsWith(".twig")) {
-                    Method methodScope = AnnotationBackportUtil.getMethodScope(phpDocTag);
-                    if(methodScope != null) {
-                        addTemplateWithScope(template, methodScope, null);
-                    }
+            } else if(template.endsWith(".twig")) {
+                Method methodScope = AnnotationBackportUtil.getMethodScope(phpDocTag);
+                if(methodScope != null) {
+                    addTemplateWithScope(template, methodScope, null);
                 }
             }
+        }
 
-            private void addTemplateWithScope(@NotNull String contents, @NotNull PhpNamedElement scope, @Nullable FunctionReference functionReference) {
-                String s = TwigUtil.normalizeTemplateName(contents);
-                consumer.accept(new Triple<>(s, scope, functionReference));
-            }
-        });
+        private void addTemplateWithScope(@NotNull String contents, @NotNull PhpNamedElement scope, @Nullable FunctionReference functionReference) {
+            String s = TwigUtil.normalizeTemplateName(contents);
+            consumer.accept(new Triple<>(s, scope, functionReference));
+        }
     }
 }

@@ -1,5 +1,6 @@
 package fr.adrienbrault.idea.symfony2plugin.ui;
 
+import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.fileTypes.StdFileTypes;
 import com.intellij.openapi.options.Configurable;
@@ -13,11 +14,11 @@ import com.intellij.util.ui.ListTableModel;
 import com.jetbrains.plugins.webDeployment.config.WebServerConfig;
 import fr.adrienbrault.idea.symfony2plugin.Settings;
 import fr.adrienbrault.idea.symfony2plugin.dic.ContainerFile;
+import fr.adrienbrault.idea.symfony2plugin.dic.container.util.ServiceContainerUtil;
 import fr.adrienbrault.idea.symfony2plugin.ui.utils.UiSettingsUtil;
 import fr.adrienbrault.idea.symfony2plugin.ui.utils.dict.UiPathColumnInfo;
 import fr.adrienbrault.idea.symfony2plugin.ui.utils.dict.WebServerFileDialogExtensionCallback;
 import fr.adrienbrault.idea.symfony2plugin.webDeployment.WebDeploymentUtil;
-import icons.WebDeploymentIcons;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -68,7 +69,7 @@ public class ContainerSettingsForm implements Configurable {
                 resetContainerList();
 
                 // add default path
-                for (String defaultContainerPath : Settings.DEFAULT_CONTAINER_PATHS) {
+                for (String defaultContainerPath : ServiceContainerUtil.getContainerFiles(project)) {
                     ContainerSettingsForm.this.modelList.addRow(new ContainerFile(defaultContainerPath));
                 }
 
@@ -139,7 +140,7 @@ public class ContainerSettingsForm implements Configurable {
     }
 
     private void addWebDeploymentButton(ToolbarDecorator tablePanel) {
-        tablePanel.addExtraAction(new AnActionButton("Remote", WebDeploymentIcons.Download) {
+        tablePanel.addExtraAction(new AnActionButton("Remote", AllIcons.Actions.Download) {
             @Override
             public void actionPerformed(AnActionEvent anActionEvent) {
                 UiSettingsUtil.openFileDialogForDefaultWebServerConnection(project, new WebServerFileDialogExtensionCallback("xml") {

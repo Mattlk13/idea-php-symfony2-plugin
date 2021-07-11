@@ -11,6 +11,7 @@ import fr.adrienbrault.idea.symfony2plugin.assistant.signature.MethodSignatureSe
 import fr.adrienbrault.idea.symfony2plugin.dic.ContainerFile;
 import fr.adrienbrault.idea.symfony2plugin.routing.dict.RoutingFile;
 import fr.adrienbrault.idea.symfony2plugin.templating.path.TwigNamespaceSetting;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -19,17 +20,10 @@ import java.util.List;
 @State(
        name = "Symfony2PluginSettings",
        storages = {
-               @Storage("/symfony2.xml")
+               @Storage("symfony2.xml")
        }
 )
 public class Settings implements PersistentStateComponent<Settings> {
-
-    // Default Symfony 2, 3 and 4 paths
-    public static String[] DEFAULT_CONTAINER_PATHS = new String[] {
-        "app/cache/dev/appDevDebugProjectContainer.xml",
-        "var/cache/dev/appDevDebugProjectContainer.xml",
-        "var/cache/dev/srcDevDebugProjectContainer.xml",
-    };
 
     // Default Symfony 2, 3 and 4 paths
     public static String[] DEFAULT_ROUTES = new String[] {
@@ -37,6 +31,7 @@ public class Settings implements PersistentStateComponent<Settings> {
         "var/cache/dev/appDevUrlGenerator.php",
         "var/cache/dev/appDevDebugProjectContainerUrlGenerator.php",
         "var/cache/dev/srcDevDebugProjectContainerUrlGenerator.php",
+        "var/cache/dev/url_matching_routes.php", // Symfony >= 4
     };
 
     public static String DEFAULT_TRANSLATION_PATH = "app/cache/dev/translations";
@@ -61,6 +56,9 @@ public class Settings implements PersistentStateComponent<Settings> {
     public boolean codeFoldingTwigRoute = true;
     public boolean codeFoldingTwigTemplate = true;
     public boolean codeFoldingTwigConstant = true;
+    public boolean featureTwigIcon = true;
+
+    public boolean twigBundleNamespaceSupport = true;
 
     public boolean dismissEnableNotification = false;
 
@@ -107,7 +105,7 @@ public class Settings implements PersistentStateComponent<Settings> {
     }
 
     @Override
-    public void loadState(Settings settings) {
+    public void loadState(@NotNull Settings settings) {
         XmlSerializerUtil.copyBean(settings, this);
     }
 }

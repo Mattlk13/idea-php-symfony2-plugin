@@ -101,4 +101,45 @@ public class YamlGotoCompletionRegistrarTest extends SymfonyLightCodeInsightFixt
             lookupElement -> "foo".equals(lookupElement.getItemText()) && lookupElement.isItemTextBold() && lookupElement.isItemTextBold()
         );
     }
+
+    public void testThatPhpConstAreCompletedAndNavigable() {
+        assertCompletionContains(
+            YAMLFileType.YML,
+            "services:\n" +
+            "    foo:\n" +
+            "       class: Foo\\Foobar\n" +
+            "       arguments: \n" +
+            "           - !php/const <caret>\n",
+            "Bar", "Foobar"
+        );
+
+        assertCompletionContains(
+            YAMLFileType.YML,
+            "services:\n" +
+            "    foo:\n" +
+            "       class: Foo\\Foobar\n" +
+            "       arguments: \n" +
+            "           - !php/const Foo\\Bar::<caret>\n",
+            "BAZ"
+        );
+
+        assertCompletionNotContains(
+            YAMLFileType.YML,
+            "services:\n" +
+            "    foo:\n" +
+            "       class: Foo\\Foobar\n" +
+            "       arguments: \n" +
+            "           - !php/const Foo\\Bar::<caret>\n",
+            "PROTECTED_CONST", "PRIVATE_CONST"
+        );
+
+        assertCompletionIsEmpty(
+            YAMLFileType.YML,
+            "services:\n" +
+            "    foo:\n" +
+            "       class: Foo\\Foobar\n" +
+            "       arguments: \n" +
+            "           - !php/const Foo\\Bar<caret>::BAZ\n"
+        );
+    }
 }

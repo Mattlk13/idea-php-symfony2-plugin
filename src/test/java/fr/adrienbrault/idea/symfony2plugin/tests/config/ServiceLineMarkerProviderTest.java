@@ -94,12 +94,15 @@ public class ServiceLineMarkerProviderTest extends SymfonyLightCodeInsightFixtur
             PsiFile psiFile = myFixture.configureByText("foo.php", "");
             assertLineMarker(
                 psiFile,
-                new LineMarker.ToolTipEqualsAssert("Navigate to resource")
+                new LineMarker.ToolTipEqualsAssert("Symfony: <a href=\"https://symfony.com/doc/current/routing.html#creating-routes-as-annotations\">Annotation Routing</a>")
             );
 
             assertLineMarker(
                 psiFile,
-                new LineMarker.TargetAcceptsPattern("Navigate to resource", XmlPatterns.xmlTag().withName("import").withAttributeValue("resource", provider[0]))
+                new LineMarker.TargetAcceptsPattern(
+                    "Symfony: <a href=\"https://symfony.com/doc/current/routing.html#creating-routes-as-annotations\">Annotation Routing</a>",
+                    XmlPatterns.xmlTag().withName("import").withAttributeValue("resource", provider[0])
+                )
             );
         }
     }
@@ -206,5 +209,37 @@ public class ServiceLineMarkerProviderTest extends SymfonyLightCodeInsightFixtur
                 "    class BarValidator implements \\Symfony\\Component\\Validator\\ConstraintValidatorInterface {}\n" +
                 "}"
         ), new LineMarker.ToolTipEqualsAssert("Navigate to constraint"));
+    }
+
+    public void testThatAutowireConstructorIsGivenALineMarker() {
+        myFixture.configureByText(YAMLFileType.YML,
+            "services:\n" +
+                "  Service\\YamlBar: " +
+                "       autowire: true\n\n"
+        );
+
+        assertLineMarker(PhpPsiElementFactory.createPsiFileFromText(getProject(), "<?php\n" +
+            "namespace Service {\n" +
+            "    class YamlBar {\n" +
+            "       function __construct() {}\n" +
+            "   }\n" +
+            "}"
+        ), markerInfo -> markerInfo.getLineMarkerTooltip() != null && markerInfo.getLineMarkerTooltip().toLowerCase().contains("autowire"));
+
+        myFixture.configureByText(YAMLFileType.YML,
+            "services:\n" +
+                "  _defaults:\n" +
+                "    autowire: true\n" +
+                "" +
+                "  Service\\YamlBarDefault: ~\n"
+        );
+
+        assertLineMarker(PhpPsiElementFactory.createPsiFileFromText(getProject(), "<?php\n" +
+            "namespace Service {\n" +
+            "    class YamlBarDefault {\n" +
+            "       function __construct() {}\n" +
+            "   }\n" +
+            "}"
+        ), markerInfo -> markerInfo.getLineMarkerTooltip() != null && markerInfo.getLineMarkerTooltip().toLowerCase().contains("autowire"));
     }
 }

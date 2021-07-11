@@ -1,21 +1,24 @@
 package fr.adrienbrault.idea.symfony2plugin.dic.container.util;
 
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Key;
+import com.intellij.openapi.vfs.VfsUtil;
+import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.patterns.PlatformPatterns;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.psi.util.*;
 import com.intellij.psi.xml.*;
 import com.intellij.util.Consumer;
 import com.intellij.util.indexing.FileBasedIndex;
 import com.jetbrains.php.PhpIndex;
-import com.jetbrains.php.lang.psi.elements.Field;
-import com.jetbrains.php.lang.psi.elements.Method;
-import com.jetbrains.php.lang.psi.elements.Parameter;
-import com.jetbrains.php.lang.psi.elements.PhpClass;
+import com.jetbrains.php.lang.psi.PhpFile;
+import com.jetbrains.php.lang.psi.elements.*;
+import com.jetbrains.php.refactoring.PhpNamespaceBraceConverter;
 import fr.adrienbrault.idea.symfony2plugin.config.xml.XmlHelper;
 import fr.adrienbrault.idea.symfony2plugin.dic.attribute.value.AttributeValueInterface;
+import fr.adrienbrault.idea.symfony2plugin.dic.attribute.value.PhpKeyValueAttributeValue;
 import fr.adrienbrault.idea.symfony2plugin.dic.attribute.value.XmlTagAttributeValue;
 import fr.adrienbrault.idea.symfony2plugin.dic.attribute.value.YamlKeyValueAttributeValue;
 import fr.adrienbrault.idea.symfony2plugin.dic.container.SerializableService;
@@ -24,10 +27,9 @@ import fr.adrienbrault.idea.symfony2plugin.dic.container.dict.ServiceFileDefault
 import fr.adrienbrault.idea.symfony2plugin.dic.container.dict.ServiceTypeHint;
 import fr.adrienbrault.idea.symfony2plugin.dic.container.visitor.ServiceConsumer;
 import fr.adrienbrault.idea.symfony2plugin.stubs.ContainerCollectionResolver;
+import fr.adrienbrault.idea.symfony2plugin.stubs.ServiceIndexUtil;
 import fr.adrienbrault.idea.symfony2plugin.stubs.indexes.ContainerIdUsagesStubIndex;
-import fr.adrienbrault.idea.symfony2plugin.util.MethodMatcher;
-import fr.adrienbrault.idea.symfony2plugin.util.PhpElementsUtil;
-import fr.adrienbrault.idea.symfony2plugin.util.PsiElementUtils;
+import fr.adrienbrault.idea.symfony2plugin.util.*;
 import fr.adrienbrault.idea.symfony2plugin.util.dict.ServiceUtil;
 import fr.adrienbrault.idea.symfony2plugin.util.psi.PsiElementAssertUtil;
 import fr.adrienbrault.idea.symfony2plugin.util.yaml.YamlHelper;
@@ -38,6 +40,8 @@ import org.jetbrains.yaml.YAMLUtil;
 import org.jetbrains.yaml.psi.*;
 
 import java.util.*;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * @author Daniel Espendiller <daniel@espendiller.net>
@@ -50,7 +54,13 @@ public class ServiceContainerUtil {
 
         // Symfony 3.3 / 3.4
         new MethodMatcher.CallToSignature("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\ControllerTrait", "get"),
+
+        // Symfony 4
+        new MethodMatcher.CallToSignature("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController", "get"),
     };
+
+    private static final Key<CachedValue<Collection<String>>> SYMFONY_COMPILED_TIMED_SERVICE_WATCHER = new Key<>("SYMFONY_COMPILED_TIMED_SERVICE_WATCHER");
+    private static final Key<CachedValue<Collection<String>>> SYMFONY_COMPILED_SERVICE_WATCHER = new Key<>("SYMFONY_COMPILED_SERVICE_WATCHER");
 
     private static String[] LOWER_PRIORITY = new String[] {
         "debug", "default", "abstract", "inner", "chain", "decorate", "delegat"
@@ -100,6 +110,11 @@ public class ServiceContainerUtil {
                     serializableService.setIsDeprecated(serviceConsumer.attributes().getBoolean("deprecated"));
                 }
 
+                services.add(serializableService);
+            });
+        } else if (psiFile instanceof PhpFile) {
+            visitFile((PhpFile) psiFile, serviceConsumer -> {
+                SerializableService serializableService = createService(serviceConsumer);
                 services.add(serializableService);
             });
         }
@@ -168,7 +183,10 @@ public class ServiceContainerUtil {
             .setIsAbstract(anAbstract)
             .setIsAutowire(attributes.getBoolean("autowire", serviceConsumer.getDefaults().isAutowire()))
             .setIsLazy(attributes.getBoolean("lazy"))
-            .setIsPublic(attributes.getBoolean("public", serviceConsumer.getDefaults().isPublic()));
+            .setIsPublic(attributes.getBoolean("public", serviceConsumer.getDefaults().isPublic()))
+            .setResource(attributes.getStringArray("resource"))
+            .setExclude(attributes.getStringArray("exclude"))
+            .setTags(attributes.getTags());
     }
 
     /**
@@ -213,20 +231,145 @@ public class ServiceContainerUtil {
                         // <defaults autowire="true" public="false" />
                         ServiceFileDefaults defaults = createDefaults(servicesTag);
 
-                        for(XmlTag serviceTag: servicesTag.findSubTags("service")) {
+                        for (XmlTag serviceTag: servicesTag.findSubTags("service")) {
                             String serviceId = serviceTag.getAttributeValue("id");
-                            if(StringUtils.isBlank(serviceId)) {
+                            if (StringUtils.isBlank(serviceId)) {
                                 continue;
                             }
 
                             consumer.consume(new ServiceConsumer(serviceTag, serviceId, new XmlTagAttributeValue(serviceTag), defaults));
-                       }
+                        }
+
+                        // <prototype namespace="App\"
+                        //    resource="../src/*"
+                        //    exclude="../src/{DependencyInjection,Entity,Migrations,Tests,Kernel.php}"/>
+                        for (XmlTag serviceTag: servicesTag.findSubTags("prototype")) {
+                            String namespace = serviceTag.getAttributeValue("namespace");
+                            if (StringUtils.isBlank(namespace)) {
+                                continue;
+                            }
+
+                            consumer.consume(new ServiceConsumer(serviceTag, namespace, new XmlTagAttributeValue(serviceTag), defaults));
+                        }
                     }
                 }
             }
         }
     }
 
+    @Nullable
+    private static String getStringValueIndexSafe(@NotNull PsiElement psiElement) {
+        String serviceClass = null;
+        if (psiElement instanceof StringLiteralExpression) {
+            serviceClass = ((StringLiteralExpression) psiElement).getContents();
+        } else if(psiElement instanceof ClassConstantReference) {
+            serviceClass = PhpElementsUtil.getClassConstantPhpFqn((ClassConstantReference) psiElement);
+        }
+
+        return StringUtils.isNotBlank(serviceClass)
+            ? serviceClass
+            : null;
+    }
+
+    /**
+     * return static function (ContainerConfigurator $container) { ... }
+     */
+    @NotNull
+    private static Collection<Function> getPhpContainerConfiguratorFunctions(@NotNull PhpFile phpFile) {
+        Collection<Function> functions = new HashSet<>();
+
+        for (PhpNamespace phpNamespace : PhpNamespaceBraceConverter.getAllNamespaces(phpFile)) {
+            // its used for all service files:
+            // namespace \Symfony\Component\DependencyInjection\Loader\Configurator { ... }
+            String fqn = phpNamespace.getFQN();
+            if (!fqn.equals("\\Symfony\\Component\\DependencyInjection\\Loader\\Configurator")) {
+                continue;
+            }
+
+            for (PhpReturn phpReturn : PsiTreeUtil.collectElementsOfType(phpNamespace, PhpReturn.class)) {
+                for (Function function : PsiTreeUtil.collectElementsOfType(phpReturn, Function.class)) {
+                    Parameter parameter = function.getParameter(0);
+                    if (parameter == null) {
+                        continue;
+                    }
+
+                    // \Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator
+                    if(parameter.getLocalType().getTypes().stream().noneMatch(s -> s.contains("\\ContainerConfigurator"))) {
+                        continue;
+                    }
+
+                    functions.add(function);
+                }
+            }
+        }
+
+        return functions;
+    }
+
+    /**
+     * Services as PHP definition
+     *
+     * "namespace Symfony\Component\DependencyInjection\Loader\Configurator;"
+     * "..."
+     * "return static function (ContainerConfigurator $container) { ... }"
+     */
+    public static void visitFile(@NotNull PhpFile phpFile, @NotNull Consumer<ServiceConsumer> consumer) {
+        for (Function function : getPhpContainerConfiguratorFunctions(phpFile)) {
+            // we only want "set" and "alias" methods
+            PsiElement[] methodReferences = PsiTreeUtil.collectElements(
+                function,
+                psiElement -> psiElement instanceof MethodReference && ("set".equals(((MethodReference) psiElement).getName()) || "alias".equals(((MethodReference) psiElement).getName()))
+            );
+
+            for (PsiElement psiElement : methodReferences) {
+                // ->set('translator.default', Translator::class)
+                if (psiElement instanceof MethodReference && "set".equals(((MethodReference) psiElement).getName())) {
+                    PsiElement[] parameters = ((MethodReference) psiElement).getParameters();
+                    String serviceName = null;
+                    if (parameters.length >= 1) {
+                        serviceName = getStringValueIndexSafe(parameters[0]);
+                    }
+
+                    if (StringUtils.isBlank(serviceName)) {
+                        continue;
+                    }
+
+                    Map<String, String> keyValue = new HashMap<>();
+                    if (parameters.length >= 2) {
+                        String serviceClass = getStringValueIndexSafe(parameters[1]);
+                        if (StringUtils.isNotBlank(serviceClass)) {
+                            keyValue.put("class", serviceClass);
+                        }
+                    }
+
+                    consumer.consume(new ServiceConsumer(parameters[0], serviceName, new PhpKeyValueAttributeValue(psiElement, keyValue), ServiceFileDefaults.EMPTY));
+                }
+
+                // ->alias(TranslatorInterface::class, 'translator')
+                if (psiElement instanceof MethodReference && "alias".equals(((MethodReference) psiElement).getName())) {
+                    PsiElement[] parameters = ((MethodReference) psiElement).getParameters();
+                    String serviceName = null;
+                    if (parameters.length >= 1) {
+                        serviceName = getStringValueIndexSafe(parameters[0]);
+                    }
+
+                    if (StringUtils.isBlank(serviceName)) {
+                        continue;
+                    }
+
+                    Map<String, String> keyValue = new HashMap<>();
+                    if (parameters.length >= 2) {
+                        String serviceClass = getStringValueIndexSafe(parameters[1]);
+                        if (StringUtils.isNotBlank(serviceClass)) {
+                            keyValue.put("alias", serviceClass);
+                        }
+                    }
+
+                    consumer.consume(new ServiceConsumer(parameters[0], serviceName, new PhpKeyValueAttributeValue(psiElement, keyValue), ServiceFileDefaults.EMPTY));
+                }
+            }
+        }
+    }
 
     /**
      * Extract default values for services tag scope
@@ -408,18 +551,46 @@ public class ServiceContainerUtil {
      */
     public static void visitNamedArguments(@NotNull PsiFile psiFile, @NotNull Consumer<Parameter> processor) {
         if (psiFile instanceof YAMLFile) {
+            Collection<Parameter> parameters = new HashSet<>();
+
+            // direct service definition
             for (PhpClass phpClass : YamlHelper.getPhpClassesInYamlFile((YAMLFile) psiFile, new ContainerCollectionResolver.LazyServiceCollector(psiFile.getProject()))) {
                 Method constructor = phpClass.getConstructor();
                 if (constructor == null) {
                     continue;
                 }
 
-                Arrays.stream(constructor.getParameters()).forEach(processor::consume);
+                parameters.addAll(Arrays.asList(constructor.getParameters()));
             }
+
+            for (YAMLKeyValue taggedService : YamlHelper.getTaggedServices((YAMLFile) psiFile, "controller.service_arguments")) {
+                PsiElement key = taggedService.getKey();
+                if (key == null) {
+                    continue;
+                }
+
+                String keyText = key.getText();
+                if (StringUtils.isBlank(keyText)) {
+                    continue;
+                }
+
+                // App\Controller\ => \App\Controller
+                String namespace = StringUtils.strip(keyText, "\\");
+                for (PhpClass phpClass : PhpIndexUtil.getPhpClassInsideNamespace(psiFile.getProject(), "\\" + namespace)) {
+                    // find all parameters on public methods; this are possible actions
+
+                    // maybe filter actions and public methods in a suitable way?
+                    phpClass.getMethods().stream()
+                        .filter(method -> method.getAccess().isPublic() && !method.getName().startsWith("set"))
+                        .forEach(method -> Collections.addAll(parameters, method.getParameters()));
+                }
+            }
+
+            parameters.forEach(processor::consume);
         }
     }
 
-    /**
+    /*
      * Symfony 3.3: "class" is optional; use service name for its it
      *
      * Foo\Bar:
@@ -560,6 +731,11 @@ public class ServiceContainerUtil {
         contents = contents.replaceAll(":+", ":");
         String[] split = contents.split(":");
 
+        if (split.length < 2) {
+            // Empty const name e.g. "\\App\\Foo::"
+            return Collections.emptyList();
+        }
+
         Collection<PsiElement> psiElements = new ArrayList<>();
         for (PhpClass phpClass : PhpElementsUtil.getClassesInterface(project, split[0])) {
             Field fieldByName = phpClass.findFieldByName(split[1], true);
@@ -585,9 +761,19 @@ public class ServiceContainerUtil {
         return usage;
     }
 
-    public static boolean isLowerPriority(String name) {
-        for(String lowerName: LOWER_PRIORITY) {
-            if(name.contains(lowerName)) {
+    /**
+     * Move services done which are possible "garbage" or should not be taken like ".debug"
+     *
+     * - ".1_~NpzP6Xn"
+     *  - ".debug."
+     *  - "router.debug"
+     */
+    public static boolean isLowerPriority(@NotNull String name) {
+        for (String lowerName: LOWER_PRIORITY) {
+            // reduce the
+            // - ".1_~NpzP6Xn"
+            // -
+            if (name.startsWith(".") || name.contains("~") || name.toLowerCase().contains(lowerName)) {
                 return true;
             }
         }
@@ -623,5 +809,100 @@ public class ServiceContainerUtil {
         );
 
         return myIds;
+    }
+
+    /**
+     * Find compiled and cache it until any psi change occur
+     *
+     * - "app/cache/dev/appDevDebugProjectContainer.xml"
+     * - ...
+     */
+    public static Collection<String> getContainerFiles(@NotNull Project project) {
+        return CachedValuesManager.getManager(project)
+            .getCachedValue(
+                project,
+                SYMFONY_COMPILED_SERVICE_WATCHER,
+                () -> CachedValueProvider.Result.create(getContainerFilesInner(project), PsiModificationTracker.MODIFICATION_COUNT),
+                false
+            );
+    }
+
+    /**
+     * All class that matched against this pattern
+     *
+     * My<caret>Class\:
+     *  resource: '....'
+     *  exclude: '....'
+     */
+    @NotNull
+    public static Collection<PhpClass> getPhpClassFromResources(@NotNull Project project, @NotNull String namespace, @NotNull VirtualFile containerFile, @NotNull Collection<String> resource, @NotNull Collection<String> exclude) {
+        Collection<PhpClass> phpClasses = new HashSet<>();
+
+        for (PhpClass phpClass : PhpIndexUtil.getPhpClassInsideNamespace(project, "\\" + StringUtils.strip(namespace, "\\"))) {
+            boolean classMatchesGlob = ServiceIndexUtil.matchesResourcesGlob(
+                containerFile,
+                phpClass.getContainingFile().getVirtualFile(),
+                resource,
+                exclude
+            );
+
+            if (classMatchesGlob) {
+                phpClasses.add(phpClass);
+            }
+        }
+
+        return phpClasses;
+    }
+
+    /**
+     * Find possible compiled service file with seconds cache
+     *
+     * - "app/cache/dev/appDevDebugProjectContainer.xml"
+     * - "var/cache/dev/appDevDebugProjectContainer.xml"
+     * - "var/cache/dev/srcDevDebugProjectContainer.xml"
+     * - "var/cache/dev/srcApp_KernelDevDebugContainer.xml"
+     * - "var/cache/dev/App_KernelDevDebugContainer.xml" // Symfony => 4 + flex
+     * - "app/cache/dev_392373729/appDevDebugProjectContainer.xml"
+     */
+    private static Collection<String> getContainerFilesInner(@NotNull Project project) {
+        return CachedValuesManager.getManager(project).getCachedValue(project, SYMFONY_COMPILED_TIMED_SERVICE_WATCHER, () -> {
+            Set<String> files = new HashSet<>();
+
+            // several Symfony cache folder structures
+            for (String root : new String[] {"var/cache", "app/cache"}) {
+                VirtualFile baseDir = ProjectUtil.getProjectDir(project);
+
+                VirtualFile relativeFile = VfsUtil.findRelativeFile(root, baseDir);
+                if (relativeFile == null) {
+                    continue;
+                }
+
+                // find a dev folder eg: "dev_392373729" or just "dev"
+                Set<VirtualFile> devFolders = Stream.of(relativeFile.getChildren())
+                    .filter(virtualFile -> virtualFile.isDirectory() && virtualFile.getName().toLowerCase().startsWith("dev"))
+                    .collect(Collectors.toSet());
+
+                for (VirtualFile devFolder : devFolders) {
+                    Set<String> debugContainers = Stream.of(devFolder.getChildren())
+                        .filter(virtualFile -> {
+                            if (!"xml".equalsIgnoreCase(virtualFile.getExtension())) {
+                                return false;
+                            }
+
+                            // Some examples: App_KernelDevDebugContainer, appDevDebugProjectContainer
+                            String filename = virtualFile.getName().toLowerCase();
+                            return filename.contains("debugcontainer")
+                                || (filename.contains("debug") && filename.contains("container"))
+                                || (filename.contains("kernel") && filename.contains("container"));
+                        })
+                        .map(virtualFile -> VfsUtil.getRelativePath(virtualFile, baseDir, '/'))
+                        .collect(Collectors.toSet());
+
+                    files.addAll(debugContainers);
+                }
+            }
+
+            return CachedValueProvider.Result.create(files, TimeSecondModificationTracker.TIMED_MODIFICATION_TRACKER_60);
+        }, false);
     }
 }

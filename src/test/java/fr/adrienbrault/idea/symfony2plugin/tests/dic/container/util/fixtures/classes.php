@@ -13,3 +13,25 @@ namespace NamedArgument
         }
     }
 }
+
+namespace App\Controller
+{
+    class FoobarController
+    {
+        public function fooAction($fooEntity, string $foobarString)
+        {
+        }
+
+        private function fooPrivate($private)
+        {
+        }
+    }
+}
+
+namespace App\Service
+{
+    class FooService
+    {
+        public const FOO = "foo";
+    }
+}

@@ -26,7 +26,6 @@ import java.util.List;
 public class FormFieldResolver implements TwigTypeResolver {
 
     public void resolve(Collection<TwigTypeContainer> targets, Collection<TwigTypeContainer> previousElement, String typeName, Collection<List<TwigTypeContainer>> previousElements, @Nullable Collection<PsiVariable> psiVariables) {
-
         if(targets.size() == 0 || psiVariables == null || previousElements == null || previousElements.size() != 0) {
             return;
         }
@@ -81,30 +80,53 @@ public class FormFieldResolver implements TwigTypeResolver {
     }
 
     private static void attachFormFields(@Nullable MethodReference methodReference, @NotNull Collection<TwigTypeContainer> targets) {
-        if(methodReference != null && PhpElementsUtil.isMethodReferenceInstanceOf(methodReference, new MethodMatcher.CallToSignature("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\Controller", "createForm"), new MethodMatcher.CallToSignature("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\ControllerTrait", "createForm"))) {
-            PsiElement formType = PsiElementUtils.getMethodParameterPsiElementAt(methodReference, 0);
-            if(formType != null) {
-                PhpClass phpClass = FormUtil.getFormTypeClassOnParameter(formType);
+        if (methodReference == null) {
+            return;
+        }
 
-                if(phpClass == null) {
-                    return;
-                }
+        int index = -1;
 
-                Method method = phpClass.findMethodByName("buildForm");
-                if(method == null) {
-                    return;
-                }
+        if (PhpElementsUtil.isMethodReferenceInstanceOf(
+            methodReference,
+            new MethodMatcher.CallToSignature("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\Controller", "createForm"),
+            new MethodMatcher.CallToSignature("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\ControllerTrait", "createForm"),
+            new MethodMatcher.CallToSignature("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController", "createForm"),
+            new MethodMatcher.CallToSignature("\\Symfony\\Component\\Form\\FormFactoryInterface", "create")
+        )) {
+            index = 0;
+        } else if (PhpElementsUtil.isMethodReferenceInstanceOf(
+            methodReference,
+            new MethodMatcher.CallToSignature("\\Symfony\\Component\\Form\\FormFactoryInterface", "createNamed")
+        )) {
+            index = 1;
+        }
 
-                targets.addAll(getTwigTypeContainer(method));
+        if (index < 0) {
+            return;
+        }
+
+        PsiElement formType = PsiElementUtils.getMethodParameterPsiElementAt(methodReference, index);
+        if(formType != null) {
+            PhpClass phpClass = FormUtil.getFormTypeClassOnParameter(formType);
+
+            if(phpClass == null) {
+                return;
             }
+
+            Method method = phpClass.findMethodByName("buildForm");
+            if(method == null) {
+                return;
+            }
+
+            targets.addAll(getTwigTypeContainer(method, phpClass));
         }
     }
 
-    private static List<TwigTypeContainer> getTwigTypeContainer(Method method) {
-        MethodReference[] formBuilderTypes = FormUtil.getFormBuilderTypes(method);
+    @NotNull
+    private static List<TwigTypeContainer> getTwigTypeContainer(@NotNull Method method, @NotNull PhpClass formTypClass) {
         List<TwigTypeContainer> twigTypeContainers = new ArrayList<>();
 
-        for(MethodReference methodReference: formBuilderTypes) {
+        for(MethodReference methodReference: FormUtil.getFormBuilderTypes(method)) {
 
             String fieldName = PsiElementUtils.getMethodParameterAt(methodReference, 0);
             PsiElement psiElement = PsiElementUtils.getMethodParameterPsiElementAt(methodReference, 1);
@@ -112,9 +134,9 @@ public class FormFieldResolver implements TwigTypeResolver {
 
             // find form field type
             if(psiElement != null) {
-                PhpClass phpClass = FormUtil.getFormTypeClassOnParameter(psiElement);
-                if(phpClass != null) {
-                    twigTypeContainer.withDataHolder(new FormDataHolder(phpClass));
+                PhpClass fieldType = FormUtil.getFormTypeClassOnParameter(psiElement);
+                if(fieldType != null) {
+                    twigTypeContainer.withDataHolder(new FormDataHolder(fieldType, formTypClass));
                 }
             }
 

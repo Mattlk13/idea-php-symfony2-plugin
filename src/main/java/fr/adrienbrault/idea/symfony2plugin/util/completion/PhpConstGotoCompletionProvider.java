@@ -42,16 +42,20 @@ public class PhpConstGotoCompletionProvider extends GotoCompletionProvider {
         PhpIndex phpIndex = PhpIndex.getInstance(this.getProject());
         CompletionResultSet resultSet = arguments.getResultSet();
 
-        final String prefix = getElement().getText().replace(CompletionUtil.DUMMY_IDENTIFIER_TRIMMED, "");
+        var elementText = getElement().getText();
+        var scopeOperatorPos = elementText.indexOf(SCOPE_OPERATOR);
+        var cursorPos = elementText.indexOf(CompletionUtil.DUMMY_IDENTIFIER_TRIMMED);
 
         // Class constants:  !php/const Foo::<caret>
-        if (prefix.contains(SCOPE_OPERATOR)) {
-            String classFQN = prefix.substring(0, getElement().getText().indexOf(SCOPE_OPERATOR));
-            PhpClass phpClass = PhpElementsUtil.getClassInterface(this.getProject(), classFQN);
+        if (scopeOperatorPos > -1 && scopeOperatorPos < cursorPos) {
+            var prefix = elementText.replace(CompletionUtil.DUMMY_IDENTIFIER_TRIMMED, "");
+            var classFQN = prefix.substring(0, scopeOperatorPos);
+            var phpClass = PhpElementsUtil.getClassInterface(this.getProject(), classFQN);
+
             if (phpClass != null) {
                 // reset the prefix matcher, starting after ::
                 resultSet = resultSet.withPrefixMatcher(prefix.substring(prefix.indexOf(SCOPE_OPERATOR) + 2));
-                resultSet.addAllElements(PhpVariantsUtil.getLookupItems(phpClass.getFields().stream().filter(Field::isConstant).collect(Collectors.toList()), false, null));
+                resultSet.addAllElements(PhpVariantsUtil.getLookupItems(phpClass.getFields().stream().filter(f -> f.isConstant() && f.getModifier().isPublic()).collect(Collectors.toList()), false, null));
             }
             return;
         }
@@ -98,7 +102,7 @@ public class PhpConstGotoCompletionProvider extends GotoCompletionProvider {
     private void addAllClassConstants(Collection<LookupElement> elements, Collection<PhpClass> classes) {
         for (PhpClass phpClass : classes) {
             // All class constants
-            List<Field> fields = Arrays.stream(phpClass.getOwnFields()).filter(Field::isConstant).collect(Collectors.toList());
+            List<Field> fields = Arrays.stream(phpClass.getOwnFields()).filter(f -> f.isConstant() && f.getModifier().isPublic()).collect(Collectors.toList());
             for (PhpNamedElement field : fields) {
                 // Foo::BAR
                 String lookupString = phpClass.getName() + SCOPE_OPERATOR + field.getName();

@@ -4,7 +4,9 @@ import com.google.gson.Gson;
 import com.intellij.openapi.util.Condition;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
+import com.intellij.util.Consumer;
 import com.intellij.util.containers.ContainerUtil;
+import com.jetbrains.php.lang.psi.elements.Parameter;
 import fr.adrienbrault.idea.symfony2plugin.dic.container.ServiceInterface;
 import fr.adrienbrault.idea.symfony2plugin.dic.container.ServiceSerializable;
 import fr.adrienbrault.idea.symfony2plugin.dic.container.dict.ServiceTypeHint;
@@ -12,11 +14,14 @@ import fr.adrienbrault.idea.symfony2plugin.dic.container.util.ServiceContainerUt
 import fr.adrienbrault.idea.symfony2plugin.stubs.ContainerCollectionResolver;
 import fr.adrienbrault.idea.symfony2plugin.tests.SymfonyLightCodeInsightFixtureTestCase;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.yaml.psi.YAMLFile;
 import org.jetbrains.yaml.psi.YAMLScalar;
 
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * @author Daniel Espendiller <daniel@espendiller.net>
@@ -104,17 +109,35 @@ public class ServiceContainerUtilTest extends SymfonyLightCodeInsightFixtureTest
         for (PsiFile psiFile : new PsiFile[]{xmlFile, ymlFile}) {
             ServiceInterface bar = ContainerUtil.find(ServiceContainerUtil.getServicesInFile(psiFile), MyStringServiceInterfaceCondition.create("non.defaults"));
             assertEquals(
-                "{\"id\":\"non.defaults\",\"class\":\"DateTime\",\"public\":false,\"lazy\":true,\"abstract\":true,\"autowire\":true,\"deprecated\":true,\"alias\":\"foo\",\"decorates\":\"foo\",\"decoration_inner_name\":\"foo\",\"parent\":\"foo\"}",
+                "{\"id\":\"non.defaults\",\"class\":\"DateTime\",\"public\":false,\"lazy\":true,\"abstract\":true,\"autowire\":true,\"deprecated\":true,\"alias\":\"foo\",\"decorates\":\"foo\",\"decoration_inner_name\":\"foo\",\"parent\":\"foo\",\"resource\":[],\"exclude\":[],\"tags\":[]}",
                 new Gson().toJson(bar)
             );
         }
+    }
+
+    public void testPhpServicesAreInIndex() {
+        PsiFile phpFile = myFixture.configureByFile("services.php");
+
+        Collection<ServiceSerializable> servicesInFile = ServiceContainerUtil.getServicesInFile(phpFile);
+
+        ServiceSerializable translationWarmer = servicesInFile.stream().filter(s -> "translator.default".equals(s.getId())).findFirst().get();
+        assertEquals(
+            "Symfony\\Bundle\\FrameworkBundle\\Translation\\Translator",
+            translationWarmer.getClassName()
+        );
+
+        ServiceSerializable translationReader = servicesInFile.stream().filter(s -> "Symfony\\Contracts\\Translation\\TranslatorInterface".equals(s.getId())).findFirst().get();
+        assertEquals(
+            "translator",
+            translationReader.getAlias()
+        );
     }
 
     public void testThatDefaultValueAreNullAndNotSerialized() {
         for (PsiFile psiFile : new PsiFile[]{xmlFile, ymlFile}) {
             ServiceInterface bar = ContainerUtil.find(ServiceContainerUtil.getServicesInFile(psiFile), MyStringServiceInterfaceCondition.create("defaults"));
             assertEquals(
-                "{\"id\":\"defaults\",\"class\":\"DateTime\"}",
+                "{\"id\":\"defaults\",\"class\":\"DateTime\",\"resource\":[],\"exclude\":[],\"tags\":[]}",
                 new Gson().toJson(bar)
             );
         }
@@ -187,6 +210,21 @@ public class ServiceContainerUtilTest extends SymfonyLightCodeInsightFixtureTest
         ServiceSerializable defaultsAlias = services.stream().filter(service -> "_yaml.defaults_alias".equals(service.getId())).findFirst().get();
         assertTrue(defaultsAlias.isAutowire());
         assertFalse(defaultsAlias.isPublic());
+    }
+
+    /**
+     * @see fr.adrienbrault.idea.symfony2plugin.dic.container.util.ServiceContainerUtil#getServicesInFile
+     */
+    public void testYamlFileScopeDefaultsForSymfony5() {
+        Collection<ServiceSerializable> services = ServiceContainerUtil.getServicesInFile(myFixture.configureByFile("services5.yml"));
+
+        ServiceSerializable appResourceSingle = services.stream().filter(service -> "AppSingle\\".equals(service.getId())).findFirst().get();
+        assertContainsElements(appResourceSingle.getResource(), "../src/*");
+        assertContainsElements(appResourceSingle.getExclude(), "../src/{DependencyInjection,Entity,Migrations,Tests,Kernel.php}");
+
+        ServiceSerializable appResourceArray = services.stream().filter(service -> "AppArray\\".equals(service.getId())).findFirst().get();
+        assertContainsElements(appResourceArray.getResource(), "../src2/*", "../src/*");
+        assertContainsElements(appResourceArray.getExclude(), "../src/{DependencyInjection,Kernel.php}", "../src2/{Tests,Kernel.php}");
     }
 
     /**
@@ -297,6 +335,30 @@ public class ServiceContainerUtilTest extends SymfonyLightCodeInsightFixtureTest
 
         assertEquals(1, typeHint.getIndex());
         assertEquals("setFoo", typeHint.getMethod().getName());
+    }
+
+    public void testVisitNamedArguments() {
+        PsiFile psiFile = myFixture.configureByText("test.yml", "" +
+            "services:\n" +
+            "   NamedArgument\\Foobar:\n" +
+            "       arguments: []\n" +
+            "" +
+            "   App\\Controller\\:\n" +
+            "       resource: '../src/Controller'\n" +
+            "       tags: ['controller.service_arguments']\n"
+        );
+
+        Collection<String> arguments = new HashSet<>();
+        ServiceContainerUtil.visitNamedArguments(psiFile, parameter -> arguments.add(parameter.getName()));
+
+        assertTrue(arguments.contains("foobar"));
+
+        assertTrue(arguments.contains("foobarString"));
+        assertFalse(arguments.contains("private"));
+    }
+
+    public void testGetTargetsForConstantForEmptyClassConstName() {
+        assertEmpty(ServiceContainerUtil.getTargetsForConstant(getProject(), "\\App\\Service\\FooService::"));
     }
 
     private static class MyStringServiceInterfaceCondition implements Condition<ServiceInterface> {

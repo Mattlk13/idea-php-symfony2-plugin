@@ -6,6 +6,7 @@ import com.jetbrains.php.lang.documentation.phpdoc.psi.tags.PhpDocTag;
 import com.jetbrains.php.lang.psi.PhpFile;
 import com.jetbrains.php.lang.psi.elements.Field;
 import com.jetbrains.php.lang.psi.elements.PhpClass;
+import de.espend.idea.php.annotation.util.AnnotationUtil;
 import fr.adrienbrault.idea.symfony2plugin.doctrine.EntityHelper;
 import fr.adrienbrault.idea.symfony2plugin.doctrine.dict.DoctrineModelField;
 import fr.adrienbrault.idea.symfony2plugin.doctrine.metadata.dict.DoctrineMetadataModel;
@@ -15,6 +16,8 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -25,7 +28,6 @@ public class DoctrinePhpMappingDriver implements DoctrineMappingDriverInterface 
 
     @Override
     public DoctrineMetadataModel getMetadata(@NotNull DoctrineMappingDriverArguments args) {
-
         PsiFile psiFile = args.getPsiFile();
         if(!(psiFile instanceof PhpFile)) {
             return null;
@@ -35,7 +37,6 @@ public class DoctrinePhpMappingDriver implements DoctrineMappingDriverInterface 
         DoctrineMetadataModel model = new DoctrineMetadataModel(fields);
 
         for (PhpClass phpClass : PhpElementsUtil.getClassesInterface(args.getProject(), args.getClassName())) {
-
             // remove duplicate code
             // @TODO: fr.adrienbrault.idea.symfony2plugin.doctrine.EntityHelper.getModelFields()
             PhpDocComment docComment = phpClass.getDocComment();
@@ -56,25 +57,38 @@ public class DoctrinePhpMappingDriver implements DoctrineMappingDriverInterface 
                     }
                 }
 
+                Map<String, Map<String, String>> maps = new HashMap<>();
                 for(Field field: phpClass.getFields()) {
-                    if(field.isConstant()) {
+                    if (field.isConstant()) {
                         continue;
                     }
 
-                    if(AnnotationBackportUtil.hasReference(field.getDocComment(), EntityHelper.ANNOTATION_FIELDS)) {
-                        DoctrineModelField modelField = new DoctrineModelField(field.getName());
-                        EntityHelper.attachAnnotationInformation(field, modelField.addTarget(field));
-                        fields.add(modelField);
+                    if (!AnnotationBackportUtil.hasReference(field.getDocComment(), EntityHelper.ANNOTATION_FIELDS)) {
+                        continue;
                     }
+
+                    // context change is case of "trait" or extends
+                    PhpClass containingClass = field.getContainingClass();
+                    if (containingClass == null) {
+                        continue;
+                    }
+
+                    // collect import context based on the class name
+                    String fqn = containingClass.getFQN();
+                    if (!maps.containsKey(fqn)) {
+                        maps.put(fqn, AnnotationUtil.getUseImportMap(field.getDocComment()));
+                    }
+
+                    DoctrineModelField modelField = new DoctrineModelField(field.getName());
+                    EntityHelper.attachAnnotationInformation(containingClass, field, modelField.addTarget(field), maps.get(fqn));
+                    fields.add(modelField);
                 }
             }
-
         }
 
         if(fields.size() == 0) {
             return null;
         }
-
 
         return model;
     }

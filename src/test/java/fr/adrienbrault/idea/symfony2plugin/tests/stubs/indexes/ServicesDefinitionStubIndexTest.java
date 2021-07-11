@@ -1,7 +1,7 @@
 package fr.adrienbrault.idea.symfony2plugin.tests.stubs.indexes;
 
 import com.intellij.psi.search.GlobalSearchScope;
-import com.intellij.util.indexing.FileBasedIndexImpl;
+import com.intellij.util.indexing.FileBasedIndex;
 import fr.adrienbrault.idea.symfony2plugin.dic.container.ServiceInterface;
 import fr.adrienbrault.idea.symfony2plugin.stubs.indexes.ServicesDefinitionStubIndex;
 import fr.adrienbrault.idea.symfony2plugin.tests.SymfonyLightCodeInsightFixtureTestCase;
@@ -19,6 +19,7 @@ public class ServicesDefinitionStubIndexTest extends SymfonyLightCodeInsightFixt
         myFixture.configureFromExistingVirtualFile(myFixture.copyFileToProject("services.xml"));
         myFixture.configureFromExistingVirtualFile(myFixture.copyFileToProject("services.yml"));
         myFixture.configureFromExistingVirtualFile(myFixture.copyFileToProject("services.yaml"));
+        myFixture.configureFromExistingVirtualFile(myFixture.copyFileToProject("services.php"));
     }
 
     public String getTestDataPath() {
@@ -33,16 +34,31 @@ public class ServicesDefinitionStubIndexTest extends SymfonyLightCodeInsightFixt
         assertEquals("AppBundle\\Controller\\DefaultController", getFirstValue("foo.yml_id").getClassName());
 
         assertEquals("AppBundle\\Controller\\DefaultController", getFirstValue("foo.yml_id.private").getClassName());
-        assertEquals(false, getFirstValue("foo.yml_id.private").isPublic());
+        assertFalse(getFirstValue("foo.yml_id.private").isPublic());
     }
 
     public void testThatServiceIdOfXmlFileIsIndexed() {
         assertIndexContains(ServicesDefinitionStubIndex.KEY, "foo.xml_id");
 
-        assertEquals("AppBundle\\Controller\\DefaultController", getFirstValue("foo.xml_id").getClassName());
+        ServiceInterface firstValue = getFirstValue("foo.xml_id");
+        assertEquals("AppBundle\\Controller\\DefaultController", firstValue.getClassName());
+        assertTrue(firstValue.isAutowire());
 
-        assertEquals("AppBundle\\Controller\\DefaultController", getFirstValue("foo.xml_id.private").getClassName());
-        assertEquals(false, getFirstValue("foo.xml_id.private").isPublic());
+        ServiceInterface firstValue1 = getFirstValue("foo.xml_id.private");
+        assertEquals("AppBundle\\Controller\\DefaultController", firstValue1.getClassName());
+        assertFalse(firstValue1.isPublic());
+        assertFalse(firstValue1.isAutowire());
+
+        ServiceInterface firstValue2 = getFirstValue("foo.xml_id.invalid_autowire");
+        assertFalse(firstValue2.isAutowire());
+
+        ServiceInterface firstValue3 = getFirstValue("my\\fooclass");
+        assertTrue(firstValue3.isAutowire());
+    }
+
+    public void testThatServiceIdOfPhpFileIsIndexed() {
+        assertIndexContains(ServicesDefinitionStubIndex.KEY, "twig.command.debug");
+        assertIndexContains(ServicesDefinitionStubIndex.KEY, "twig.command.debug_alias");
     }
 
     public void testServiceIdOfYmlWithDeprecatedShortcut() {
@@ -65,7 +81,41 @@ public class ServicesDefinitionStubIndexTest extends SymfonyLightCodeInsightFixt
         assertEquals("espend.my_bar_customer_inner.inner_foo", getFirstValue("espend.my_bar_customer_inner.inner_foo").getId());
     }
 
+    public void testThatResourceAndExcludeAttributesAreExtractedForYaml() {
+        ServiceInterface firstValue = getFirstValue("app\\controller\\");
+
+        assertEquals("App\\Controller\\", firstValue.getId());
+        assertContainsElements(firstValue.getResource(), "../src/Controller");
+        assertContainsElements(firstValue.getExclude(), "../src/{Entity,Tests}");
+    }
+
+    public void testThatResourceAndExcludeAttributesAreExtractedForXml() {
+        ServiceInterface firstValue = getFirstValue("app\\xml\\");
+
+        assertEquals("App\\Xml\\", firstValue.getId());
+        assertContainsElements(firstValue.getResource(), "../src/*");
+        assertContainsElements(firstValue.getExclude(), "../src/{DependencyInjection,Entity,Migrations,Tests,Kernel.php}");
+    }
+
+    public void testThatTagAreInIndexForYaml() {
+        ServiceInterface firstValue = getFirstValue("foo.tagged.yaml_type");
+        assertContainsElements(firstValue.getTags(), "yaml_type_tag");
+
+        firstValue = getFirstValue("foo.tagged.yaml_type2");
+        assertContainsElements(firstValue.getTags(), "yaml_type_tag2");
+        assertContainsElements(firstValue.getTags(), "yaml_type_tag21");
+
+        firstValue = getFirstValue("foo.tagged.yaml_type3");
+        assertContainsElements(firstValue.getTags(), "yaml_type_tag3");
+    }
+
+    public void testThatTagAreInIndexForXml() {
+        ServiceInterface firstValue = getFirstValue("foo.tagged.xml_type");
+
+        assertContainsElements(firstValue.getTags(), "xml_type_tag");
+    }
+
     private ServiceInterface getFirstValue(@NotNull String key) {
-        return FileBasedIndexImpl.getInstance().getValues(ServicesDefinitionStubIndex.KEY, key, GlobalSearchScope.allScope(getProject())).get(0);
+        return FileBasedIndex.getInstance().getValues(ServicesDefinitionStubIndex.KEY, key, GlobalSearchScope.allScope(getProject())).get(0);
     }
 }

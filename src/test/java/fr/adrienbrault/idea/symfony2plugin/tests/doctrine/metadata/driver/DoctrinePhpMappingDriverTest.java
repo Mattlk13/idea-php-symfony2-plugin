@@ -31,18 +31,37 @@ public class DoctrinePhpMappingDriverTest extends SymfonyLightCodeInsightFixture
         DoctrineMetadataModel metadata = createOrmMetadata();
 
         assertEquals("string", metadata.getField("email").getTypeName());
+        assertEquals("string", metadata.getField("emailTrait").getTypeName());
 
         assertEquals("OneToMany", metadata.getField("phonenumbers").getRelationType());
-        assertEquals("Phonenumber", metadata.getField("phonenumbers").getRelation());
+        assertEquals("\\Doctrine\\Orm\\Phonenumber", metadata.getField("phonenumbers").getRelation());
 
         assertEquals("OneToOne", metadata.getField("address").getRelationType());
-        assertEquals("Address", metadata.getField("address").getRelation());
+        assertEquals("\\Doctrine\\Orm\\Address", metadata.getField("address").getRelation());
 
         assertEquals("ManyToOne", metadata.getField("apple").getRelationType());
-        assertEquals("Apple", metadata.getField("apple").getRelation());
+        assertEquals("\\Doctrine\\Orm\\Apple", metadata.getField("apple").getRelation());
 
         assertEquals("ManyToMany", metadata.getField("egg").getRelationType());
-        assertEquals("Egg", metadata.getField("egg").getRelation());
+        assertEquals("\\Doctrine\\Orm\\Egg", metadata.getField("egg").getRelation());
+
+        assertEquals("ManyToMany", metadata.getField("egg").getRelationType());
+        assertEquals("\\Doctrine\\Orm\\Egg", metadata.getField("egg").getRelation());
+
+        assertEquals("ManyToMany", metadata.getField("eggClass").getRelationType());
+        assertEquals("\\Doctrine\\Egg", metadata.getField("eggClass").getRelation());
+
+        assertEquals("ManyToMany", metadata.getField("eggSelfAlias").getRelationType());
+        assertEquals("\\Doctrine\\Egg", metadata.getField("eggSelfAlias").getRelation());
+
+        assertEquals("ManyToMany", metadata.getField("eggSelfAliasFooBar").getRelationType());
+        assertEquals("\\Doctrine\\Egg\\Foo\\Bar", metadata.getField("eggSelfAliasFooBar").getRelation());
+
+        assertEquals("ManyToOne", metadata.getField("appleTrait").getRelationType());
+        assertEquals("\\Doctrine\\Apple", metadata.getField("appleTrait").getRelation());
+
+        assertEquals("ManyToOne", metadata.getField("appleExtends").getRelationType());
+        assertEquals("\\Doctrine\\FooBar", metadata.getField("appleExtends").getRelation());
     }
 
     /**

@@ -1,8 +1,8 @@
 <idea-plugin url="https://github.com/Haehnchen/idea-php-symfony2-plugin">
     <id>fr.adrienbrault.idea.symfony2plugin</id>
     <name>Symfony Support</name>
-    <version>0.18.181</version>
-    <vendor email="daniel@espendiller.net" url="http://espend.de">Daniel Espendiller</vendor>
+    <version>0.23.210</version>
+    <vendor email="daniel@espendiller.net" url="http://espend.de?p=fr.adrienbrault.idea.symfony2plugin">espend_de</vendor>
 
     <description><![CDATA[
 <p>Support for Symfony framework / components.</p>
@@ -19,7 +19,7 @@
     <li>(Optional) Configure a default project connection in "Remote Hosts Access / Remote Hosts" to enable support for remote files in plugin settings</li>
     <li>(Optional) Ignore Symfony "cache" directory because of duplicate classes "Settings -> Project -> Directories"</li>
     <li>(Optional) Install <a href="https://plugins.jetbrains.com/plugin/8133">PHP Toolbox</a></li>
-    <li>(Optional) To support <b>XLIFF translations</b> add "*.xlf" / "*.xliff" to XML "Editor" -> "File Types"</li>
+    <li>(Optional) For <b>XLIFF translations</b> key navigation install <a href="https://plugins.jetbrains.com/plugin/13673">Localization</a> or add "*.xlf" / "*.xliff" to XML "Editor" -> "File Types"</li>
 </ul>
 
 <h2>Features</h2>
@@ -82,11 +82,12 @@
 
 <h2>Related Plugins</h2>
 <ul>
-    <li><a href="http://plugins.jetbrains.com/plugin/7320">PHP Annotations</a></li>
-    <li><a href="http://plugins.jetbrains.com/plugin/7487">Drupal Symfony Bridge</a></li>
-    <li><a href="http://plugins.jetbrains.com/plugin/7532">Laravel Plugin</a></li>
-    <li><a href="http://plugins.jetbrains.com/plugin/7410">Shopware Plugin</a></li>
-    <li><a href="http://plugins.jetbrains.com/plugin/8133">PHP Toolbox</a></li>
+    <li><a href="https://plugins.jetbrains.com/plugin/7320">PHP Annotations</a></li>
+    <li><a href="https://plugins.jetbrains.com/plugin/13673">Localization</a></li>
+    <li><a href="https://plugins.jetbrains.com/plugin/7487">Drupal Symfony Bridge</a></li>
+    <li><a href="https://plugins.jetbrains.com/plugin/7532">Laravel Plugin</a></li>
+    <li><a href="https://plugins.jetbrains.com/plugin/7410">Shopware Plugin</a></li>
+    <li><a href="https://plugins.jetbrains.com/plugin/8133">PHP Toolbox</a></li>
 </ul>
 
 <h2><a href="https://github.com/Haehnchen/idea-php-symfony2-plugin/contributors">Contributors</a></h2>
@@ -96,15 +97,18 @@
       ]]></description>
 
     <!-- please see http://confluence.jetbrains.net/display/IDEADEV/Build+Number+Ranges for description -->
-    <idea-version since-build="182.0"/>
+    <idea-version since-build="211.0"/>
 
     <extensions defaultExtensionNs="com.jetbrains.php">
-        <typeProvider3 implementation="fr.adrienbrault.idea.symfony2plugin.dic.SymfonyContainerTypeProvider"/>
-        <typeProvider3 implementation="fr.adrienbrault.idea.symfony2plugin.util.EventDispatcherTypeProvider"/>
-        <typeProvider3 implementation="fr.adrienbrault.idea.symfony2plugin.doctrine.ObjectRepositoryTypeProvider"/>
-        <typeProvider3 implementation="fr.adrienbrault.idea.symfony2plugin.doctrine.ObjectRepositoryResultTypeProvider"/>
-        <typeProvider3 implementation="fr.adrienbrault.idea.symfony2plugin.doctrine.ObjectManagerFindTypeProvider"/>
-        <typeProvider3 implementation="fr.adrienbrault.idea.symfony2plugin.assistant.signature.MethodSignatureTypeProvider"/>
+        <typeProvider4 implementation="fr.adrienbrault.idea.symfony2plugin.dic.SymfonyContainerTypeProvider"/>
+        <typeProvider4 implementation="fr.adrienbrault.idea.symfony2plugin.util.EventDispatcherTypeProvider"/>
+        <typeProvider4 implementation="fr.adrienbrault.idea.symfony2plugin.doctrine.ObjectRepositoryTypeProvider"/>
+        <typeProvider4 implementation="fr.adrienbrault.idea.symfony2plugin.doctrine.ObjectRepositoryResultTypeProvider"/>
+        <typeProvider4 implementation="fr.adrienbrault.idea.symfony2plugin.doctrine.ObjectManagerFindTypeProvider"/>
+        <typeProvider4 implementation="fr.adrienbrault.idea.symfony2plugin.doctrine.ObjectManagerFindContextTypeProvider"/>
+        <typeProvider4 implementation="fr.adrienbrault.idea.symfony2plugin.assistant.signature.MethodSignatureTypeProvider"/>
+
+
         <libraryRoot id="symfony_meta" path="/symfony-meta/" runtime="false"/>
         <libraryRoot id="doctrine_meta" path="/doctrine-meta/" runtime="false"/>
     </extensions>
@@ -215,6 +219,7 @@
         <fileBasedIndex implementation="fr.adrienbrault.idea.symfony2plugin.stubs.indexes.EventAnnotationStubIndex"/>
         <fileBasedIndex implementation="fr.adrienbrault.idea.symfony2plugin.stubs.indexes.ContainerIdUsagesStubIndex"/>
         <fileBasedIndex implementation="fr.adrienbrault.idea.symfony2plugin.stubs.indexes.TwigBlockIndexExtension"/>
+        <fileBasedIndex implementation="fr.adrienbrault.idea.symfony2plugin.stubs.indexes.TwigControllerStubIndex"/>
 
         <codeInsight.lineMarkerProvider language="PHP" implementationClass="fr.adrienbrault.idea.symfony2plugin.config.ServiceLineMarkerProvider"/>
         <codeInsight.lineMarkerProvider language="PHP" implementationClass="fr.adrienbrault.idea.symfony2plugin.dic.ControllerMethodLineMarkerProvider"/>
@@ -241,6 +246,7 @@
         <codeInsight.parameterNameHints language="yaml" implementationClass="fr.adrienbrault.idea.symfony2plugin.dic.ServiceArgumentParameterHintsProvider"/>
 
         <multiHostInjector implementation="fr.adrienbrault.idea.symfony2plugin.lang.ParameterLanguageInjector"/>
+        <iconProvider implementation="fr.adrienbrault.idea.symfony2plugin.twig.icon.TwigIconProvider"/>
 
         <localInspection groupPath="Symfony" shortName="PhpRouteMissingInspection" displayName="Route Missing"
                          groupName="Route"
@@ -337,6 +343,12 @@
                          enabledByDefault="true" level="WARNING"
                          language="Twig"
                          implementationClass="fr.adrienbrault.idea.symfony2plugin.templating.inspection.TwigVariableDeprecatedInspection"/>
+
+        <localInspection groupPath="Symfony" shortName="TwigExtensionDeprecatedInspection" displayName="Deprecated Twig Extension"
+                         groupName="Twig"
+                         enabledByDefault="true" level="WARNING"
+                         language="Twig"
+                         implementationClass="fr.adrienbrault.idea.symfony2plugin.templating.inspection.TwigExtensionDeprecatedInspection"/>
 
         <localInspection groupPath="Symfony" shortName="YamlQuotedEscapedInspection" displayName="Quoted issues"
                          groupName="Yaml"
@@ -543,6 +555,7 @@
         <extensionPoint name="extension.TwigVariableCollector" interface="fr.adrienbrault.idea.symfony2plugin.templating.variable.TwigFileVariableCollector"/>
         <extensionPoint name="extension.PluginConfigurationExtension" interface="fr.adrienbrault.idea.symfony2plugin.extension.PluginConfigurationExtension"/>
         <extensionPoint name="extension.TranslatorProvider" interface="fr.adrienbrault.idea.symfony2plugin.extension.TranslatorProvider"/>
+        <extensionPoint name="extension.TwigFileUsage" interface="fr.adrienbrault.idea.symfony2plugin.extension.TwigFileUsage"/>
     </extensionPoints>
 
     <extensions defaultExtensionNs="fr.adrienbrault.idea.symfony2plugin.extension">
@@ -551,6 +564,7 @@
         <ControllerActionGotoRelatedCollector implementation="fr.adrienbrault.idea.symfony2plugin.navigation.controller.RouteControllerRelatedGotoCollector"/>
         <ControllerActionGotoRelatedCollector implementation="fr.adrienbrault.idea.symfony2plugin.navigation.controller.ModelsControllerRelatedGotoCollector"/>
         <ControllerActionGotoRelatedCollector implementation="fr.adrienbrault.idea.symfony2plugin.navigation.controller.TemplatesControllerRelatedGotoCollector"/>
+        <ControllerActionGotoRelatedCollector implementation="fr.adrienbrault.idea.symfony2plugin.navigation.controller.TwigControllerUsageControllerRelatedGotoCollector"/>
 
         <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.form.FormOptionGotoCompletionRegistrar"/>
         <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.templating.BlockGotoCompletionRegistrar"/>
@@ -558,6 +572,7 @@
         <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.templating.TranslationTagGotoCompletionRegistrar"/>
         <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.form.FormGotoCompletionRegistrar"/>
         <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.config.php.PhpEventDispatcherGotoCompletionRegistrar"/>
+        <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.config.php.PhpMessageSubscriberGotoCompletionRegistrar"/>
         <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.completion.command.PhpCommandGotoCompletionRegistrar"/>
         <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.completion.command.ConsoleHelperGotoCompletionRegistrar"/>
         <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.doctrine.metadata.DoctrineXmlGotoCompletionRegistrar"/>
@@ -569,11 +584,13 @@
         <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.dic.registrar.DicGotoCompletionRegistrar"/>
         <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.completion.yaml.YamlGotoCompletionRegistrar"/>
         <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.translation.ValidatorTranslationGotoCompletionRegistrar"/>
+        <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.translation.ConstraintMessageGotoCompletionRegistrar"/>
         <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.security.VoterGotoCompletionRegistrar"/>
         <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.translation.TranslationPlaceholderGotoCompletionRegistrar"/>
         <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.dic.TaggedParameterGotoCompletionRegistrar"/>
         <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.templating.RenderParameterGotoCompletionRegistrar"/>
         <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.security.AnnotationExpressionGotoCompletionRegistrar"/>
+        <GotoCompletionRegistrar implementation="fr.adrienbrault.idea.symfony2plugin.templating.webpack.WebpackEncoreGotoCompletionRegistrar"/>
 
         <TwigNamespaceExtension implementation="fr.adrienbrault.idea.symfony2plugin.templating.path.JsonFileIndexTwigNamespaces"/>
         <TwigNamespaceExtension implementation="fr.adrienbrault.idea.symfony2plugin.templating.path.ConfigAddPathTwigNamespaces"/>
@@ -596,6 +613,7 @@
 
         <TranslatorProvider implementation="fr.adrienbrault.idea.symfony2plugin.translation.provider.CompiledTranslatorProvider"/>
         <TranslatorProvider implementation="fr.adrienbrault.idea.symfony2plugin.translation.provider.IndexTranslatorProvider"/>
+        <TranslatorProvider implementation="fr.adrienbrault.idea.symfony2plugin.translation.provider.CompiledContainerTranslatorProvider"/>
     </extensions>
 
     <depends>com.jetbrains.twig</depends>
@@ -618,6 +636,10 @@
 
         <!-- @IsGranted -->
         <PhpAnnotationReferenceProvider implementation="fr.adrienbrault.idea.symfony2plugin.security.IsGrantedAnnotationReferences"/>
+
+        <!-- @FooConstraint(message="sss") -->
+        <PhpAnnotationReferenceProvider implementation="fr.adrienbrault.idea.symfony2plugin.translation.annotation.ConstraintMessageAnnotationReferences"/>
+        <PhpAnnotationCompletionProvider implementation="fr.adrienbrault.idea.symfony2plugin.translation.annotation.ConstraintMessageAnnotationReferences"/>
     </extensions>
 
     <extensions defaultExtensionNs="de.espend.idea.php.toolbox.extension">

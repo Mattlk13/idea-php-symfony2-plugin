@@ -31,6 +31,10 @@ public class SymfonyPhpReferenceContributor extends PsiReferenceContributor {
         new MethodMatcher.CallToSignature("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\ControllerTrait", "get"),
         new MethodMatcher.CallToSignature("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\ControllerTrait", "has"),
 
+        // Symfony 4
+        new MethodMatcher.CallToSignature("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController", "get"),
+        new MethodMatcher.CallToSignature("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController", "has"),
+
         new MethodMatcher.CallToSignature("\\Symfony\\Component\\DependencyInjection\\ContainerInterface", "get"),
         new MethodMatcher.CallToSignature("\\Symfony\\Component\\DependencyInjection\\ContainerInterface", "has"),
         new MethodMatcher.CallToSignature("\\Psr\\Container\\ContainerInterface", "get"),
@@ -40,8 +44,11 @@ public class SymfonyPhpReferenceContributor extends PsiReferenceContributor {
     public static MethodMatcher.CallToSignature[] REPOSITORY_SIGNATURES = new MethodMatcher.CallToSignature[] {
         new MethodMatcher.CallToSignature("\\Doctrine\\Common\\Persistence\\ManagerRegistry", "getRepository"),
         new MethodMatcher.CallToSignature("\\Doctrine\\Common\\Persistence\\ObjectManager", "getRepository"),
+        new MethodMatcher.CallToSignature("\\Doctrine\\Persistence\\ManagerRegistry", "getRepository"),
+        new MethodMatcher.CallToSignature("\\Doctrine\\Persistence\\ObjectManager", "getRepository"),
         new MethodMatcher.CallToSignature("\\Doctrine\\ORM\\EntityManager", "getReference"),
         new MethodMatcher.CallToSignature("\\Doctrine\\Common\\Persistence\\ManagerRegistry", "getManagerForClass"),
+        new MethodMatcher.CallToSignature("\\Doctrine\\Persistence\\ManagerRegistry", "getManagerForClass"),
         new MethodMatcher.CallToSignature("\\Doctrine\\ORM\\QueryBuilder", "update"),
         new MethodMatcher.CallToSignature("\\Doctrine\\ORM\\QueryBuilder", "delete"),
         new MethodMatcher.CallToSignature("\\Doctrine\\ORM\\QueryBuilder", "from"),
@@ -69,12 +76,25 @@ public class SymfonyPhpReferenceContributor extends PsiReferenceContributor {
         new MethodMatcher.CallToSignature("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\ControllerTrait", "renderView"),
         new MethodMatcher.CallToSignature("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\ControllerTrait", "stream"),
 
+        // Symfony 4
+        new MethodMatcher.CallToSignature("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController", "render"),
+        new MethodMatcher.CallToSignature("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController", "stream"),
+        new MethodMatcher.CallToSignature("\\Symfony\\Bundle\\FrameworkBundle\\Controller\\AbstractController", "renderView"),
+
         new MethodMatcher.CallToSignature("\\Twig_Environment", "render"),
         new MethodMatcher.CallToSignature("\\Twig_Environment", "loadTemplate"),
         new MethodMatcher.CallToSignature("\\Twig_Environment", "getTemplateClass"),
         new MethodMatcher.CallToSignature("\\Twig_Environment", "display"),
         new MethodMatcher.CallToSignature("\\Twig_Environment", "isTemplateFresh"),
         new MethodMatcher.CallToSignature("\\Twig_Environment", "resolveTemplate"), // @TODO: also "is_array($names)"
+
+        new MethodMatcher.CallToSignature("\\Twig\\Environment", "render"),
+        new MethodMatcher.CallToSignature("\\Twig\\Environment", "load"),
+        new MethodMatcher.CallToSignature("\\Twig\\Environment", "loadTemplate"),
+        new MethodMatcher.CallToSignature("\\Twig\\Environment", "getTemplateClass"),
+        new MethodMatcher.CallToSignature("\\Twig\\Environment", "display"),
+        new MethodMatcher.CallToSignature("\\Twig\\Environment", "isTemplateFresh"),
+        new MethodMatcher.CallToSignature("\\Twig\\Environment", "resolveTemplate"), // @TODO: also "is_array($names)"
     };
 
     @Override
@@ -143,6 +163,7 @@ public class SymfonyPhpReferenceContributor extends PsiReferenceContributor {
 
                     MethodMatcher.MethodMatchParameter methodMatchParameter = new MethodMatcher.StringParameterMatcher(psiElement, 0)
                         .withSignature("\\Doctrine\\Common\\Persistence\\ObjectManager", "find")
+                        .withSignature("\\Doctrine\\Persistence\\ObjectManager", "find")
                         .match();
 
                     if(methodMatchParameter == null) {

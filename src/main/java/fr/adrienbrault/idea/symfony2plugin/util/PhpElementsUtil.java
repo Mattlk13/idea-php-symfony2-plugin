@@ -3,10 +3,12 @@ package fr.adrienbrault.idea.symfony2plugin.util;
 import com.intellij.codeInsight.completion.CompletionResultSet;
 import com.intellij.openapi.project.Project;
 import com.intellij.patterns.ElementPattern;
+import com.intellij.patterns.PatternCondition;
 import com.intellij.patterns.PlatformPatterns;
 import com.intellij.patterns.PsiElementPattern;
 import com.intellij.psi.*;
 import com.intellij.psi.util.PsiTreeUtil;
+import com.intellij.util.ProcessingContext;
 import com.intellij.util.Processor;
 import com.jetbrains.php.PhpIndex;
 import com.jetbrains.php.codeInsight.PhpCodeInsightUtil;
@@ -29,10 +31,12 @@ import com.jetbrains.php.refactoring.PhpAliasImporter;
 import fr.adrienbrault.idea.symfony2plugin.dic.MethodReferenceBag;
 import fr.adrienbrault.idea.symfony2plugin.util.psi.PsiElementAssertUtil;
 import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.ArrayUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * @author Daniel Espendiller <daniel@espendiller.net>
@@ -115,8 +119,37 @@ public class PhpElementsUtil {
         Map<String, PsiElement> keys = new HashMap<>();
         for (PsiElement child : arrayValues) {
             String stringValue = PhpElementsUtil.getStringValue(child.getFirstChild());
-            if(stringValue != null && StringUtils.isNotBlank(stringValue)) {
+            if(StringUtils.isNotBlank(stringValue)) {
                 keys.put(stringValue, child);
+            }
+        }
+
+        return keys;
+    }
+
+    /**
+     * array('foo' => FOO.class, 'foo1' => 'bar', 1 => 'foo')
+     */
+    @NotNull
+    static public Map<String, PsiElement> getArrayKeyValueMapWithValueAsPsiElement(@NotNull ArrayCreationExpression arrayCreationExpression) {
+        HashMap<String, PsiElement> keys = new HashMap<>();
+
+        for(ArrayHashElement arrayHashElement: arrayCreationExpression.getHashElements()) {
+            PhpPsiElement child = arrayHashElement.getKey();
+            if(child != null && ((child instanceof StringLiteralExpression) || PhpPatterns.psiElement(PhpElementTypes.NUMBER).accepts(child))) {
+
+                String key;
+                if(child instanceof StringLiteralExpression) {
+                    key = ((StringLiteralExpression) child).getContents();
+                } else {
+                    key = child.getText();
+                }
+
+                if(key == null || StringUtils.isBlank(key)) {
+                    continue;
+                }
+
+                keys.put(key, arrayHashElement.getValue());
             }
         }
 
@@ -267,6 +300,26 @@ public class PhpElementsUtil {
             .withLanguage(PhpLanguage.INSTANCE);
     }
 
+    static public PsiElementPattern.Capture<StringLiteralExpression> getFunctionWithFirstStringPattern(@NotNull String... functionName) {
+        return PlatformPatterns
+            .psiElement(StringLiteralExpression.class)
+            .withParent(
+                PlatformPatterns.psiElement(ParameterList.class)
+                    .withFirstChild(
+                        PlatformPatterns.psiElement(PhpElementTypes.STRING)
+                    )
+                    .withParent(
+                        PlatformPatterns.psiElement(FunctionReference.class).with(new PatternCondition<FunctionReference>("function match") {
+                            @Override
+                            public boolean accepts(@NotNull FunctionReference functionReference, ProcessingContext processingContext) {
+                                return ArrayUtils.contains(functionName, functionReference.getName());
+                            }
+                        })
+                    )
+            )
+            .withLanguage(PhpLanguage.INSTANCE);
+    }
+
     /**
      * $foo->bar('<caret>')
      */
@@ -296,6 +349,20 @@ public class PhpElementsUtil {
                 PlatformPatterns.psiElement(PhpTokenTypes.kwCLASS)
             )
             .withParent(PhpClass.class)
+            .withLanguage(PhpLanguage.INSTANCE);
+    }
+
+    /**
+     * class Foo { function "test" {} }
+     */
+    static public PsiElementPattern.Capture<PsiElement> getClassMethodNamePattern() {
+        return PlatformPatterns
+            .psiElement(PhpTokenTypes.IDENTIFIER)
+            .afterLeafSkipping(
+                PlatformPatterns.psiElement(PsiWhiteSpace.class),
+                PlatformPatterns.psiElement(PhpTokenTypes.kwFUNCTION)
+            )
+            .withParent(Method.class)
             .withLanguage(PhpLanguage.INSTANCE);
     }
 
@@ -508,14 +575,16 @@ public class PhpElementsUtil {
     }
 
     public static Method[] getImplementedMethods(@NotNull Method method) {
-        ArrayList<Method> items = getImplementedMethods(method.getContainingClass(), method, new ArrayList<>());
+        ArrayList<Method> items = getImplementedMethods(method.getContainingClass(), method, new ArrayList<>(), new HashSet<>());
         return items.toArray(new Method[items.size()]);
     }
 
-    private static ArrayList<Method> getImplementedMethods(@Nullable PhpClass phpClass, @NotNull Method method, ArrayList<Method> implementedMethods) {
-        if (phpClass == null) {
+    private static ArrayList<Method> getImplementedMethods(@Nullable PhpClass phpClass, @NotNull Method method, ArrayList<Method> implementedMethods, Set<PhpClass> visitedClasses) {
+        if (phpClass == null || visitedClasses.contains(phpClass)) {
             return implementedMethods;
         }
+
+        visitedClasses.add(phpClass);
 
         Method[] methods = phpClass.getOwnMethods();
         for (Method ownMethod : methods) {
@@ -525,10 +594,10 @@ public class PhpElementsUtil {
         }
 
         for(PhpClass interfaceClass: phpClass.getImplementedInterfaces()) {
-            getImplementedMethods(interfaceClass, method, implementedMethods);
+            getImplementedMethods(interfaceClass, method, implementedMethods, visitedClasses);
         }
 
-        getImplementedMethods(phpClass.getSuperClass(), method, implementedMethods);
+        getImplementedMethods(phpClass.getSuperClass(), method, implementedMethods, visitedClasses);
 
         return implementedMethods;
     }
@@ -984,24 +1053,23 @@ public class PhpElementsUtil {
      *
      * function foo(\FooClass $class)
      */
-    @Nullable
-    public static String getMethodParameterTypeHint(@NotNull Method method) {
+    @NotNull
+    public static Collection<String> getMethodParameterTypeHints(@NotNull Method method) {
         ParameterList childOfType = PsiTreeUtil.getChildOfType(method, ParameterList.class);
         if(childOfType == null) {
-            return null;
+            return Collections.emptyList();
         }
 
         PsiElement[] parameters = childOfType.getParameters();
         if(parameters.length == 0) {
-            return null;
+            return Collections.emptyList();
         }
-
-        ClassReference classReference = PsiTreeUtil.getChildOfType(parameters[0], ClassReference.class);
-        if(classReference == null) {
-            return null;
-        }
-
-        return classReference.getFQN();
+        
+        PhpTypeDeclaration typeDeclaration = PsiTreeUtil.getChildOfType(parameters[0], PhpTypeDeclaration.class);
+        if (typeDeclaration == null) return Collections.emptyList();
+        return typeDeclaration.getClassReferences().stream()
+            .map(PhpReference::getFQN)
+            .collect(Collectors.toList());
     }
 
     /**

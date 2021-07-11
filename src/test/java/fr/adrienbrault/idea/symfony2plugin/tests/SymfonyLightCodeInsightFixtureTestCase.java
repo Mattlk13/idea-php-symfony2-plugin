@@ -103,6 +103,22 @@ public abstract class SymfonyLightCodeInsightFixtureTestCase extends LightCodeIn
         completionContainsAssert(lookupStrings);
     }
 
+    public void assertCompletionIsEmpty(LanguageFileType languageFileType, String configureByText) {
+
+        myFixture.configureByText(languageFileType, configureByText);
+        myFixture.completeBasic();
+
+        List<String> lookupElements = myFixture.getLookupElementStrings();
+
+        if (lookupElements == null) {
+            return;
+        }
+
+        if (!lookupElements.isEmpty()) {
+            fail("Failed that completion is empty.");
+        }
+    }
+
     private void completionContainsAssert(String[] lookupStrings) {
         if(lookupStrings.length == 0) {
             fail("No lookup element given");
@@ -562,7 +578,7 @@ public abstract class SymfonyLightCodeInsightFixtureTestCase extends LightCodeIn
 
         final List<PsiElement> elements = collectPsiElementsRecursive(psiElement);
 
-        for (LineMarkerProvider lineMarkerProvider : LineMarkerProviders.INSTANCE.allForLanguage(psiElement.getLanguage())) {
+        for (LineMarkerProvider lineMarkerProvider : LineMarkerProviders.getInstance().allForLanguage(psiElement.getLanguage())) {
             Collection<LineMarkerInfo> lineMarkerInfos = new ArrayList<LineMarkerInfo>();
             lineMarkerProvider.collectSlowLineMarkers(elements, lineMarkerInfos);
 
@@ -584,7 +600,7 @@ public abstract class SymfonyLightCodeInsightFixtureTestCase extends LightCodeIn
 
         final List<PsiElement> elements = collectPsiElementsRecursive(psiElement);
 
-        for (LineMarkerProvider lineMarkerProvider : LineMarkerProviders.INSTANCE.allForLanguage(psiElement.getLanguage())) {
+        for (LineMarkerProvider lineMarkerProvider : LineMarkerProviders.getInstance().allForLanguage(psiElement.getLanguage())) {
             Collection<LineMarkerInfo> lineMarkerInfos = new ArrayList<LineMarkerInfo>();
             lineMarkerProvider.collectSlowLineMarkers(elements, lineMarkerInfos);
 

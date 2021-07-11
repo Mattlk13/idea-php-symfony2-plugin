@@ -46,17 +46,6 @@ public class TwigUtilTest extends SymfonyLightCodeInsightFixtureTestCase {
     }
 
     /**
-     * @see fr.adrienbrault.idea.symfony2plugin.templating.util.TwigUtil#getTemplateNameByOverwrite
-     */
-    public void testTemplateOverwriteNavigation() {
-        if(System.getenv("PHPSTORM_ENV") != null) return;
-
-        assertNavigationContainsFile(TwigFileType.INSTANCE, "{% extends '<caret>TwigUtilIntegrationBundle:layout.html.twig' %}", "/views/layout.html.twig");
-        assertNavigationContainsFile(TwigFileType.INSTANCE, "{% extends '<caret>TwigUtilIntegrationBundle:Foo/layout.html.twig' %}", "/views/Foo/layout.html.twig");
-        assertNavigationContainsFile(TwigFileType.INSTANCE, "{% extends '<caret>TwigUtilIntegrationBundle:Foo/Bar/layout.html.twig' %}", "/views/Foo/Bar/layout.html.twig");
-    }
-
-    /**
      * @see fr.adrienbrault.idea.symfony2plugin.templating.util.TwigUtil#isValidStringWithoutInterpolatedOrConcat
      */
     public void testIsValidTemplateString() {
@@ -272,15 +261,23 @@ public class TwigUtilTest extends SymfonyLightCodeInsightFixtureTestCase {
 
         PsiFile fileFromText = PsiFileFactory.getInstance(getProject()).createFileFromText(TwigLanguage.INSTANCE,
             "{% form_theme form ':Foobar:fields.html.twig' %}" +
-            "{% form_theme form.foobar \":Foobar:fields_foobar.html.twig\" %}" +
-            "{% form_theme form.foobar with [\":Foobar:fields_foobar_1.html.twig\"] %}" +
-            "{% form_theme form.foobar with {\":Foobar:fields_foobar_2.html.twig\", \":Foobar:fields_foobar_3.html.twig\", \":Foobar:fields_foobar_4.html.twig\"} %}"
+                "{% include 'include.html.twig' %}" +
+                "{% import 'import.html.twig' %}" +
+                "{% from 'from.html.twig' import foobar %}" +
+                "{% import 'import.html.twig' %}" +
+                "{{ include('include_function.html.twig') }}" +
+                "{{ source('source_function.html.twig') }}" +
+                "{% embed 'embed.html.twig' %}" +
+                "{% form_theme form.foobar \":Foobar:fields_foobar.html.twig\" %}" +
+                "{% form_theme form.foobar with [\":Foobar:fields_foobar_1.html.twig\"] %}" +
+                "{% form_theme form.foobar with {\":Foobar:fields_foobar_2.html.twig\", \":Foobar:fields_foobar_3.html.twig\", \":Foobar:fields_foobar_4.html.twig\"} %}"
         );
 
         TwigUtil.visitTemplateIncludes((TwigFile) fileFromText, templateInclude ->
             includes.add(templateInclude.getTemplateName())
         );
 
+        assertContainsElements(includes, "include.html.twig", "import.html.twig", "from.html.twig", "include_function.html.twig", "source_function.html.twig", "embed.html.twig");
         assertContainsElements(includes, ":Foobar:fields.html.twig", ":Foobar:fields_foobar.html.twig", ":Foobar:fields_foobar_1.html.twig");
         assertContainsElements(includes, ":Foobar:fields_foobar_2.html.twig", ":Foobar:fields_foobar_3.html.twig", ":Foobar:fields_foobar_4.html.twig");
     }
@@ -414,9 +411,9 @@ public class TwigUtilTest extends SymfonyLightCodeInsightFixtureTestCase {
 
             List<String> strings = Arrays.asList(TwigUtil.getControllerMethodShortcut((Method) psiElement.getParent()));
 
-            assertContainsElements(strings, "FooBundle:Foobar:" + string[1] + ".html.twig");
-            assertContainsElements(strings, "FooBundle:Foobar:" + string[1] + ".json.twig");
-            assertContainsElements(strings, "FooBundle:Foobar:" + string[1] + ".xml.twig");
+            assertContainsElements(strings, "FooBundle:foobar:" + string[1] + ".html.twig");
+            assertContainsElements(strings, "FooBundle:foobar:" + string[1] + ".json.twig");
+            assertContainsElements(strings, "FooBundle:foobar:" + string[1] + ".xml.twig");
         }
     }
 
@@ -436,9 +433,30 @@ public class TwigUtilTest extends SymfonyLightCodeInsightFixtureTestCase {
 
         List<String> strings = Arrays.asList(TwigUtil.getControllerMethodShortcut((Method) psiElement.getParent()));
 
-        assertContainsElements(strings, "FooBundle::Foobar.html.twig");
-        assertContainsElements(strings, "FooBundle::Foobar.json.twig");
-        assertContainsElements(strings, "FooBundle::Foobar.xml.twig");
+        assertContainsElements(strings, "FooBundle::foobar.html.twig");
+        assertContainsElements(strings, "FooBundle::foobar.json.twig");
+        assertContainsElements(strings, "FooBundle::foobar.xml.twig");
+    }
+
+    public void testGetControllerMethodShortcutForInvokeWithSnakeCase() {
+        myFixture.copyFileToProject("controller_method.php");
+
+        myFixture.configureByText(PhpFileType.INSTANCE, "<?php\n" +
+            "namespace FooBundle\\Controller;\n" +
+            "class FooBarController\n" +
+            "{\n" +
+            "   public function __in<caret>voke() {}\n" +
+            "" +
+            "}\n"
+        );
+
+        PsiElement psiElement = myFixture.getFile().findElementAt(myFixture.getCaretOffset());
+
+        List<String> strings = Arrays.asList(TwigUtil.getControllerMethodShortcut((Method) psiElement.getParent()));
+
+        assertContainsElements(strings, "FooBundle::foo_bar.html.twig");
+        assertContainsElements(strings, "FooBundle::foo_bar.json.twig");
+        assertContainsElements(strings, "FooBundle::foo_bar.xml.twig");
     }
 
     public void testFindTwigFileController() {
@@ -855,6 +873,20 @@ public class TwigUtilTest extends SymfonyLightCodeInsightFixtureTestCase {
         assertContainsElements(blocks2, "name");
         assertContainsElements(blocks2, "foobar");
         assertDoesntContain(blocks, "foobar_2");
+    }
+
+    public void testGetTwigFunctionParameterIdentifierPsi() {
+        PsiElement psiElement = TwigElementFactory.createPsiElement(getProject(), "{{ form(form.name) }}", TwigElementTypes.FUNCTION_CALL);
+        PsiElement twigFunctionParameter = TwigUtil.getTwigFunctionParameterIdentifierPsi(psiElement);
+
+        assertEquals("form", twigFunctionParameter.getText());
+        assertEquals(TwigTokenTypes.IDENTIFIER, twigFunctionParameter.getNode().getElementType());
+
+        psiElement = TwigElementFactory.createPsiElement(getProject(), "{{ form_start(\n     form, {attr: {'novalidate': 'novalidate'}}) }}", TwigElementTypes.FUNCTION_CALL);
+        twigFunctionParameter = TwigUtil.getTwigFunctionParameterIdentifierPsi(psiElement);
+
+        assertEquals("form", twigFunctionParameter.getText());
+        assertEquals(TwigTokenTypes.IDENTIFIER, twigFunctionParameter.getNode().getElementType());
     }
 
     public void testGetBlockLookupElements() {

@@ -3,7 +3,6 @@ package fr.adrienbrault.idea.symfony2plugin.util.dict;
 import com.intellij.codeInsight.daemon.RelatedItemLineMarkerInfo;
 import com.intellij.codeInsight.hint.HintManager;
 import com.intellij.codeInsight.navigation.NavigationGutterIconBuilder;
-import com.intellij.ide.highlighter.XmlFileType;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.project.Project;
@@ -14,7 +13,6 @@ import com.intellij.openapi.vfs.VirtualFile;
 import com.intellij.psi.PsiElement;
 import com.intellij.psi.PsiFile;
 import com.intellij.psi.PsiManager;
-import com.intellij.psi.search.GlobalSearchScope;
 import com.intellij.psi.util.*;
 import com.intellij.ui.components.JBList;
 import com.intellij.util.Consumer;
@@ -42,7 +40,6 @@ import fr.adrienbrault.idea.symfony2plugin.util.yaml.YamlHelper;
 import org.apache.commons.lang.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.yaml.YAMLFileType;
 
 import java.util.*;
 
@@ -183,7 +180,7 @@ public class ServiceUtil {
 
         Collection<PsiElement> psiElements = new ArrayList<>();
 
-        Collection<VirtualFile> fileCollection = FileBasedIndex.getInstance().getContainingFiles(ContainerParameterStubIndex.KEY, parameterName, GlobalSearchScope.getScopeRestrictedByFileTypes(GlobalSearchScope.allScope(project), XmlFileType.INSTANCE, YAMLFileType.YML));
+        Collection<VirtualFile> fileCollection = FileBasedIndex.getInstance().getContainingFiles(ContainerParameterStubIndex.KEY, parameterName, ServiceIndexUtil.getRestrictedFileTypesScope(project));
         for(VirtualFile virtualFile: fileCollection) {
             PsiFile psiFile = PsiManager.getInstance(project).findFile(virtualFile);
             if(psiFile != null) {
@@ -231,7 +228,7 @@ public class ServiceUtil {
         for (String serviceName : result) {
 
             // get service where we found our tags
-            List<Set<String>> values = FileBasedIndex.getInstance().getValues(ServicesTagStubIndex.KEY, serviceName, GlobalSearchScope.getScopeRestrictedByFileTypes(GlobalSearchScope.allScope(project), XmlFileType.INSTANCE, YAMLFileType.YML));
+            List<Set<String>> values = FileBasedIndex.getInstance().getValues(ServicesTagStubIndex.KEY, serviceName, ServiceIndexUtil.getRestrictedFileTypesScope(project));
             if(values.size() == 0) {
                 continue;
             }
@@ -292,12 +289,27 @@ public class ServiceUtil {
         Set<String> service = new HashSet<>();
 
         for(String serviceName: SymfonyProcessors.createResult(project, ServicesTagStubIndex.KEY)) {
-            List<Set<String>> serviceDefinitions = FileBasedIndex.getInstance().getValues(ServicesTagStubIndex.KEY, serviceName, GlobalSearchScope.getScopeRestrictedByFileTypes(GlobalSearchScope.allScope(project), XmlFileType.INSTANCE, YAMLFileType.YML));
+            List<Set<String>> serviceDefinitions = FileBasedIndex.getInstance().getValues(ServicesTagStubIndex.KEY, serviceName, ServiceIndexUtil.getRestrictedFileTypesScope(project));
             for(Set<String> strings: serviceDefinitions) {
                 if(strings.contains(tagName)) {
                     service.add(serviceName);
                 }
             }
+        }
+
+        return service;
+    }
+
+    @NotNull
+    public static Set<String> getServiceTags(@NotNull Project project, @NotNull String serviceId) {
+        Set<String> service = new HashSet<>();
+
+        for(Set<String> strings: FileBasedIndex.getInstance().getValues(ServicesTagStubIndex.KEY, serviceId, ServiceIndexUtil.getRestrictedFileTypesScope(project))) {
+            service.addAll(strings);
+        }
+
+        for(Set<String> strings: FileBasedIndex.getInstance().getValues(ServicesTagStubIndex.KEY, serviceId.toLowerCase(), ServiceIndexUtil.getRestrictedFileTypesScope(project))) {
+            service.addAll(strings);
         }
 
         return service;
@@ -590,18 +602,12 @@ public class ServiceUtil {
      */
     @NotNull
     public static Collection<String> getParameterParameters(@NotNull Project project) {
-        CachedValue<Collection<String>> cache = project.getUserData(KERNEL_PARAMETER_CACHE);
-
-        if(cache == null) {
-            cache = CachedValuesManager.getManager(project).createCachedValue(() ->
-                CachedValueProvider.Result.create(getParameterParametersInner(project), PsiModificationTracker.MODIFICATION_COUNT),
-                false
-            );
-
-            project.putUserData(KERNEL_PARAMETER_CACHE, cache);
-        }
-
-        return cache.getValue();
+        return CachedValuesManager.getManager(project).getCachedValue(
+            project,
+            KERNEL_PARAMETER_CACHE,
+            () -> CachedValueProvider.Result.create(getParameterParametersInner(project), PsiModificationTracker.MODIFICATION_COUNT),
+            false
+        );
     }
 
     @NotNull

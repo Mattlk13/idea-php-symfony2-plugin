@@ -3,9 +3,12 @@ package fr.adrienbrault.idea.symfony2plugin.dic.linemarker;
 import com.intellij.codeInsight.daemon.LineMarkerInfo;
 import com.intellij.codeInsight.daemon.LineMarkerProvider;
 import com.intellij.codeInsight.navigation.NavigationGutterIconBuilder;
+import com.intellij.icons.AllIcons;
+import com.intellij.openapi.util.NotNullLazyValue;
 import com.intellij.psi.PsiElement;
 import fr.adrienbrault.idea.symfony2plugin.Symfony2ProjectComponent;
 import fr.adrienbrault.idea.symfony2plugin.config.yaml.YamlElementPatternHelper;
+import fr.adrienbrault.idea.symfony2plugin.config.yaml.YamlGoToDeclarationHandler;
 import fr.adrienbrault.idea.symfony2plugin.util.dict.ServiceUtil;
 import fr.adrienbrault.idea.symfony2plugin.util.yaml.YamlHelper;
 import org.apache.commons.lang.StringUtils;
@@ -23,12 +26,12 @@ import java.util.List;
 public class YamlLineMarkerProvider implements LineMarkerProvider {
     @Nullable
     @Override
-    public LineMarkerInfo getLineMarkerInfo(@NotNull PsiElement psiElement) {
+    public LineMarkerInfo<?> getLineMarkerInfo(@NotNull PsiElement psiElement) {
         return null;
     }
 
     @Override
-    public void collectSlowLineMarkers(@NotNull List<PsiElement> psiElements, @NotNull Collection<LineMarkerInfo> result) {
+    public void collectSlowLineMarkers(@NotNull List<? extends PsiElement> psiElements, @NotNull Collection<? super LineMarkerInfo<?>> result) {
         if(psiElements.size() == 0 || !Symfony2ProjectComponent.isEnabled(psiElements.get(0))) {
             return;
         }
@@ -52,10 +55,33 @@ public class YamlLineMarkerProvider implements LineMarkerProvider {
 
             // services -> service_name
             visitServiceId(psiElement, (YAMLKeyValue) yamlKeyValue, result, lazyDecoratedServices);
+
+            // services:
+            //    App\:
+            //        resource: '../src/*'
+            visitServiceIdForResources(psiElement, (YAMLKeyValue) yamlKeyValue, result);
         }
     }
 
-    private void visitServiceId(@NotNull PsiElement leafTarget, @NotNull YAMLKeyValue yamlKeyValue, @NotNull Collection<LineMarkerInfo> result, @NotNull LazyDecoratedParentServiceValues lazyDecoratedServices) {
+    private void visitServiceIdForResources(PsiElement leafTarget, YAMLKeyValue yamlKeyValue, @NotNull Collection<? super LineMarkerInfo<?>> result) {
+        String resource = YamlHelper.getYamlKeyValueAsString(yamlKeyValue, "resource");
+        if (resource == null) {
+            return;
+        }
+
+        result.add(NavigationGutterIconBuilder.create(AllIcons.Modules.SourceRoot)
+            .setTargets(new NotNullLazyValue<Collection<? extends PsiElement>>() {
+                @NotNull
+                @Override
+                protected Collection<? extends PsiElement> compute() {
+                    return YamlGoToDeclarationHandler.getClassesForServiceKey(yamlKeyValue);
+                }
+            })
+            .setTooltipText("Navigate to class")
+            .createLineMarkerInfo(leafTarget));
+    }
+
+    private void visitServiceId(@NotNull PsiElement leafTarget, @NotNull YAMLKeyValue yamlKeyValue, @NotNull Collection<? super LineMarkerInfo<?>> result, @NotNull LazyDecoratedParentServiceValues lazyDecoratedServices) {
         String id = yamlKeyValue.getKeyText();
         if(StringUtils.isBlank(id)) {
             return;
@@ -63,13 +89,13 @@ public class YamlLineMarkerProvider implements LineMarkerProvider {
 
         // decorates: foobar
         String decorates = YamlHelper.getYamlKeyValueAsString(yamlKeyValue, "decorates");
-        if(decorates != null && StringUtils.isNotBlank(decorates)) {
+        if(StringUtils.isNotBlank(decorates)) {
             result.add(ServiceUtil.getLineMarkerForDecoratesServiceId(leafTarget, ServiceUtil.ServiceLineMarker.DECORATE, decorates));
         }
 
         // parent: foobar
         String parent = YamlHelper.getYamlKeyValueAsString(yamlKeyValue, "parent");
-        if(parent != null && StringUtils.isNotBlank(parent)) {
+        if(StringUtils.isNotBlank(parent)) {
             result.add(ServiceUtil.getLineMarkerForDecoratesServiceId(leafTarget, ServiceUtil.ServiceLineMarker.PARENT, parent));
         }
 
