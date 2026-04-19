@@ -23,6 +23,15 @@ Changelog
 * 0.10.x: PhpStorm 7 (no support)
 * 0.9.x: PhpStorm 6 (no support)
 
+## 2026.1.300
+* Add support for direct Twig extension symbol usage detection in "Find Usages" and improve handler delegations (Daniel Espendiller)
+* Add Find Usages support for Twig functions and filters (Daniel Espendiller)
+* Deduplicate Twig file processing for getter and shortcut search words in usage detection. (Daniel Espendiller)
+* Add support for method, default, and prefix handling in PHP RoutingConfigurator routes (Daniel Espendiller)
+* Add Twig usage detection for constants, enums, and `@var` comments. (Daniel Espendiller)
+* Add support for indexing and navigation of Symfony PHP RoutingConfigurator routes (Daniel Espendiller)
+* Twig usages: Wrap `getTwigTargetMember` call in a read action (Daniel Espendiller)
+
 ## 2026.1.299
 * Add Twig type usage target provider for "Find Usages" functionality (Daniel Espendiller)
 * Add Twig method and property usage detection and grouping in "Find Usages" (Daniel Espendiller)
