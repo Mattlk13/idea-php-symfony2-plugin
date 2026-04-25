@@ -23,6 +23,16 @@ Changelog
 * 0.10.x: PhpStorm 7 (no support)
 * 0.9.x: PhpStorm 6 (no support)
 
+## 2026.1.301
+* Optimize Symfony command inside terminal plugin caching and ensure proper invalidation on PHP modifications and dumb mode handling. (Daniel Espendiller)
+* [#2756](https://github.com/Haehnchen/idea-php-symfony2-plugin/issues/2756) fix freezing under parsing translation files during wsl (Daniel Espendiller)
+* Cache `trans_default_domain` lookups by scope to improve performance and reduce redundant calculations in Twig files. (Daniel Espendiller)
+* Refactor translation index handling with caching and improve domain/key resolution logic (Daniel Espendiller)
+* Add support for completion and navigation of Symfony Constraint messages in PHP attributes via array `message` key (Daniel Espendiller)
+* Migrate translation references for forms and ConstraintMessage to implicit navigation (Daniel Espendiller)
+* reduce psi trigger for route usages (Daniel Espendiller)
+* fix @Event index should be called fqn normalized (Daniel Espendiller)
+
 ## 2026.1.300
 * Add support for direct Twig extension symbol usage detection in "Find Usages" and improve handler delegations (Daniel Espendiller)
 * Add Find Usages support for Twig functions and filters (Daniel Espendiller)
