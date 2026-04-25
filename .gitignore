@@ -8,3 +8,8 @@ out/
 /.junie
 *.hprof
 .mcp.json
+.codex
+.junie
+.kotlin
+.agents
+.claude
